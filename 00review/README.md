@@ -10,4 +10,4 @@
 
 在技术层面上，自动驾驶软件架构百花齐放。斯坦佛和卡耐基梅隆大学在 DARPA 挑战赛上首次展示了完全自动驾驶技术。在欧洲，VIAC 工程和戴姆勒KIT定义了完全自动驾驶车辆软件架构所需要的不同处理阶段，其中主要包括感知、决策和控制。
 
-<img src="/home/zy/knowledge_map/00review/picture/control architecture for automated vehicle.png" style="zoom: 80%;" />
+<img src="picture/control architecture for automated vehicle.png" style="zoom:80%;" />
