@@ -12,7 +12,7 @@
 
 <img src="picture/control architecture for automated vehicle.png" style="zoom:80%;" />
 
-	## 运动规划方法
+## 运动规划算法
 
 运动规划方法分成四大类：分别为图搜索、采样，差值和数值优化
 
