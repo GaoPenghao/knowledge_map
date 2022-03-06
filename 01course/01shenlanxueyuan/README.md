@@ -178,21 +178,28 @@ euclidean signed distance function 欧氏有符号的距离函数，即在整个
 - 伪代码
 
   >- 声明“优先级队列”，用于存储所有待访问的节点    // ==根据节点的 f 值排序==
+  >
   >- 定义并初始化所有节点的启发项 h(n)
+  >
   >- 将起始节点 Xs 放入优先级队列中
+  >
   >- 初始化节点 g 值，令 g(Xs) = 0, 其他的节点 g(n) = inf
+  >
   >- 主循环
+  >
   >  - 如果队列为空，则返回 FALSE
   >  - 从优先级队列中弹出 ==f 值==最小的节点 n    // 与Dijkstra 不同之处
   >  - 将节点 n 标记为被访问 
   >  - 如果节点 n 是最终目标，则返回 TRUE
   >  - 对于每一个未被访问的、n 的邻居节点 m
-  >    * 如果 g(m) == inf    // 说明节点 m 不在优先级队列中
+  >    - 如果 g(m) == inf    // 说明节点 m 不在优先级队列中
   >      - g(m) = g(n) + Cnm
   >      - 将节点 m 放入优先级队列中
-  >    * 如果 g(m) > g(n) + Cnm  // 说明节点 m 已经在优先级队列中，只是未被访问
+  >    - 如果 g(m) > g(n) + Cnm  // 说明节点 m 已经在优先级队列中，只是未被访问
   >      - g(m) = g(n) + Cnm   // 更新 g(m)
+  >
   >  - 本轮循环结束
+  >
   >- 结束循环
 
 - 保证最优性的条件
@@ -250,3 +257,35 @@ euclidean signed distance function 欧氏有符号的距离函数，即在整个
 - 各种图搜索算法的仿真演示：http://qiao.github.io/PathFinding.js/visual/
 - JPS搜索可视化演示：https://zerowidth.com/2013/a-visual-explanation-of-jump-point-search.html
 - JPS开源库：https://github.com/KumarRobotics/jps3d
+
+# 基于采样的路径规划
+
+## 相关概念
+
+- Complete Planner: always answers a path planning query correctly in bounded time
+- Probabilistic Complete Planner: if a solution exists, planner will eventually find it, using random sampling (e.g. Monte Carlo sampling)
+- Resolution Complete Planner: same as above but based on a deterministic sampling (e.g. sampling on a fixed grid)
+
+## 概率路图（PRM, Probabilistic Road Map）
+
+- 本质上是一种图结构，使用随机采样的点抽象表示整个空间，比栅格地图更加稀疏、简化，可以认为是一种简化版的栅格地图
+- 将规划分成两个阶段：学习阶段和查询阶段
+- 学习阶段
+  - 在配置空间中采样N个点
+  - 删除落到障碍物中的点
+  - 连接采样点，构成边，连线的基本规则
+    - 太远的两点之间不连
+    - 经过障碍物的不连
+- 查询阶段
+  - 使用A*或Dijkstra算法找到路径
+- 在学习阶段中，collision check 比较费时，然后每个采样点都需要进行 collision check 是比较低效的，所以有研究者提出了 lazy collision-checking，主要思想是在学习阶段不进行 collision check，在查询阶段如果查询到的边或节点是 collision 的，则将其删掉。
+
+## 快速搜索随机树（RRT, Rapidly-exploring Random Tree）
+
+- 以增量式的方法在起点和终点之间构建树结构，区别于PRM，不需要将整个流程分成学习阶段和查询阶段，也不需要A*或者Dijkstra进行路径查找，而是一种新的框架，一旦终点被扩充至树结构中，则表示找到了一条路径，等于说在学习地图的过程中顺便找到了路径
+
+- 伪代码
+
+  > 
+  >
+  > 
