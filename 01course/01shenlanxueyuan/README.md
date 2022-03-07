@@ -286,6 +286,110 @@ euclidean signed distance function 欧氏有符号的距离函数，即在整个
 
 - 伪代码
 
-  > 
+  > Input: $\mathcal{M}, x_{init}, x_{goal}$
   >
-  > 
+  > Result: A path $\mathcal{T}$ from $x_{init}$ to $x_{goal}$ 
+  >
+  > $\mathcal{T}.init()$;
+  >
+  > for $i = 1\ to\ n$ do
+  >
+  > ​	$x_{rand} \gets Sample(\mathcal{M})$;
+  >
+  > ​	$x_{near}\gets Near(x_{rand},\mathcal{T})$;
+  >
+  > ​	$x_{new} \gets Steer(x_{rand},x_{near},StepSize)$;
+  >
+  > ​	$E_i \gets Edge(x_{new},x_{near})$;
+  >
+  > ​	if $CollisionFree(\mathcal{M},E_i)$ then
+  >
+  > ​		$\mathcal{T}.addNode(x_{new})$;
+  >
+  > ​		$\mathcal{T}.addEdge(E_i)$;
+  >
+  > ​	if $x_{new}=x_{goal}$ then
+  >
+  > ​		$Success()$;
+
+- 新增的子节点总是存在1个父节点，所以生成的树结构中每个节点存在以下特点，这两个特点决定了，一旦终点被扩展到树结构，则可以直接回溯得到一条路径：
+  - 每个节点可能存在多个子节点
+  - 每个节点仅存在一个父节点
+- 提高效率的措施
+  - 使用 Kd-tree 提高 $Near(x_{rand},\mathcal{T})$ 的效率
+  - RRT Connect / Bidirectional RRT
+    - 以起点和终点作为根节点分别构建树，每撒一次点，同时对两个树进行一次扩展
+    - 当两棵树连接时，则表示找到了路径
+
+## RRT*
+
+- 伪代码
+
+  > Input: $\mathcal{M}, x_{init}, x_{goal}$
+  >
+  > Result: A path $\mathcal{T}$ from $x_{init}$ to $x_{goal}$ 
+  >
+  > $\mathcal{T}.init()$;
+  >
+  > for $i = 1\ to\ n$ do
+  >
+  > ​	$x_{rand} \gets Sample(\mathcal{M})$;
+  >
+  > ​	$x_{near}\gets Near(x_{rand},\mathcal{T})$;
+  >
+  > ​	$x_{new} \gets Steer(x_{rand},x_{near},StepSize)$;
+  >
+  > ​	if $CollisionFree(x_{new})$ then
+  >
+  > ​		$X_{near} \gets NearC(\mathcal{T},x_{new})$;
+  >
+  > ​		$x_{min} \gets ChooseParent(X_{naer},x_{near},x_{new})$;
+  >
+  > ​		$\mathcal{T}.addNodeEdge(x_{min},x_{new})$;
+  >
+  > ​		$\mathcal{T}.rewire()$;
+
+## Kinodynamic-RRT*
+
+- 主要修改 $Steer(x_{rand},x_{near},StepSize)$ 函数，已符合机器人运动学约束
+
+## Anytime-RRT*
+
+- 实时以机器人位置为根节点进行树的更新，以适应环境的变化
+
+## Informed RRT*
+
+- 当使用找到一条路径之后，将采样范围限定到椭圆（以起点和终点为焦点，以路径长度作为到焦点的距离之和）中
+
+## Cross-entropy motion planning
+
+- 采样得到一条路径
+- 以路径节点为中心，生成多高斯分布
+- 采样得到多条路径
+- 多条路径的均值为新的高斯分布，进入下一轮采样
+
+## 一些应用
+
+- Navigation stick - ROS，基于 move_base
+  - Global planner, A\*, D\*, RRTs, etc
+  - Local planner, Dwa, eband, Teb, etc 
+
+# 满足动力学约束的路径规划
+
+## State Lattice Planning
+
+- 基本思想
+  - 构建一个 graph，其中节点之间的连线是动力学可行的
+  - 创建这样的 graph 有两个基本的思路
+    - 正向操作，离散化控制（工作）空间
+    - 反向操作，离散化状态空间，求两个状态之间的动力学可行性连接
+- 对于一个机器人运动模型：$\dot{s}=f(s,u)$，已知初始状态 $s_0$
+  - 在控制空间采样，选择一个 $u$，固定一个时间间隔 $T$，向前积分
+    - 没有任务导向
+    - 每一步都比较方便实施
+    - 规划效率较低
+  - 在状态空间采样，选择一个 $s_f$，计算 $s_0$ 和 $s_f$ 之间的一条连接（轨迹）
+    - 需要计算 $u,\ T$
+    - 有任务导向
+    - 每一步比较复杂
+    - 规划效率较高
