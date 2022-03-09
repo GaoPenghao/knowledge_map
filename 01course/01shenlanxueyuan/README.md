@@ -393,3 +393,23 @@ euclidean signed distance function 欧氏有符号的距离函数，即在整个
     - 有任务导向
     - 每一步比较复杂
     - 规划效率较高
+
+## 边值问题（Boundary  Value Problem）
+
+- 自由边界，则该状态量对应的协变量 $\lambda=0$
+
+## 启发式函数
+
+- 不考虑障碍物
+- 不考虑动力学约束
+
+## Hybrid A*
+
+
+
+## Kinodynamic RRT*
+
+
+
+
+
