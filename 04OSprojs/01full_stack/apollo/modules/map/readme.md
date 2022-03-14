@@ -1,81 +1,49 @@
-# Dig into Apollo - Map ![GitHub](https://img.shields.io/github/license/daohu527/Dig-into-Apollo.svg?style=popout)
+# map模块简介
 
-> 事者，生于虑，成于务，失于傲。
-
-## Table of Contents
-- [Map模块简介](#introduction)
-- [Map目录结构](#content)
-- [地图数据结构](#map_data_struct)
-    - [地图信息头](#header)
-    - [人行横道](#crosswalk)
-    - [路口](#junction)
-    - [车道](#lane)
-    - [停止信号](#stop_sign)
-    - [交通信号标志](#signal)
-    - [让行](#yield)
-    - [重叠区域](#overlap)
-    - [禁止停车](#cleararea)
-    - [道路信息](#road)
-    - [停车区域](#parking)
-    - [行人道路](#sidewalk)
-- [opendriver地图解析](#parse)
-- [tools](#tools)
-- [高精度地图API](#api)
-- [如何制作高精度地图](#how)
-    - [采集](#collect)
-    - [加工](#process)
-    - [转换](#transform)
-- [Reference](#reference)
-
-
-<a name="introduction" />
-
-## Map模块简介
 其实我们只需要知道map模块的主要功能是“加载openstreet格式的地图，并且提供一系列的API给其他模块使用”。然后再根据具体的场景来了解地图各个部分的作用，就算是对map模块比较了解了。
 
-<a name="content" />
+apollo的高精度地图采用了opendrive格式，opendrive是一个统一的地图标准，这样保证了地图的通用性。其中map模块主要提供的功能是读取高精度地图，并且转换成apollo程序中的Map对象。直白一点就是说把xml格式的opendrive高精度地图，读取为程序能够识别的格式。
 
-## Map目录结构
-本章主要介绍下apollo代码的map模块，map的代码目录结构如下:
+map模块没有实现的功能是高精度地图的制作，简略的制图过程将在下面章节介绍。
+
+# 地图数据结构
+由于openstreet格式是一个标准，可以参考它的官方网站。下面主要介绍下apollo是如何读取xml地图，并且使用的。
+
+地图的读取在 hdmap/adapter中，其中xml_parser目录提供解析xml的能力。而"opendrive_adapter.cc"则实现了地图的加载，转换为程序中的Map对象。然后地图在"hdmap_impl.cc"中提供一系列api接口给其他模块使用。 
+
+下面先介绍下地图消息格式，主要在proto目录。
+
+## Map
+
+"map.proto" 分为地图头部信息和结构体，头部信息主要介绍了地图的基本信息“版本，时间，投影方法，地图大小，厂家等”。结构体主要是道路的不同组成部分，包括“人行横道，路口区域，车道，停车标志，信号灯，让行标志，重叠区域，禁停区域，减速带，道路，停车区域，等”。  
+
+其中有2个交通标志(StopSign，YieldSign)。停车的意思是到路口先停止，看下有没有车，然后再开始启动；让车就是先让行，比如交汇路口，理应让直行的车辆先通过，然后再汇入道路。
+
+overlap指“任何一对在地图上区域有重叠的元素，包括（车道，路口，人行横道）”，比如路口的人行横道和道路是重叠的，还有一些交通标志和道路也是重叠的。 
+
+```protobuf
+message Map {
+  optional Header header = 1;        //上面所说的地图基本信息
+
+  repeated Crosswalk crosswalk = 2;  //人行横道
+  repeated Junction junction = 3;    //交叉路口
+  repeated Lane lane = 4;           //车道
+  repeated StopSign stop_sign = 5;  //停车标志
+  repeated Signal signal = 6;       //信号灯
+  repeated YieldSign yield = 7;     //让车标志
+  repeated Overlap overlap = 8;     //重叠区域
+  repeated ClearArea clear_area = 9;  //禁止停车区域
+  repeated SpeedBump speed_bump = 10;  //减速带
+  repeated Road road = 11;             //道路
+  repeated ParkingSpace parking_space = 12; //停车区域
+  repeated PNCJunction pnc_junction = 13;  // todo
+  repeated RSU rsu = 14;  // 路边单元，todo
+}
 ```
-├── data           // 生成好的地图
-│   └── demo
-├── hdmap          // 高精度地图
-│   ├── adapter    // 从xml文件读取地图(openstreet保存格式为xml)
-│   │   └── xml_parser
-│   └── test-data
-├── pnc_map        // 给规划控制模块用的地图
-│   └── testdata
-├── proto          // 地图各元素的消息格式(人行横道，车道线等)
-├── relative_map   // 相对地图
-│   ├── common
-│   ├── conf
-│   ├── dag
-│   ├── launch
-│   ├── proto
-│   ├── testdata
-│   │   └── multi_lane_map
-│   └── tools
-├── testdata       // 测试数据？
-│   └── navigation_dummy
-└── tools          // 工具
-```
-apollo的高精度地图采用了opendrive格式，opendrive是一个统一的地图标准，这样保证了地图的通用性。其中map模块主要提供的功能是读取高精度地图，并且转换成apollo程序中的Map对象。直白一点就是说把xml格式的opendrive高精度地图，读取为程序能够识别的格式。  
-map模块没有实现的功能是高精度地图的制作，简略的制图过程将在下面章节介绍。  
 
-<a name="map_data_struct" />
-
-## 地图数据结构
-由于openstreet格式是一个标准，可以它的参考官方网站。下面主要介绍下apollo是如何读取xml地图，并且使用的。  
-地图的读取在adapter中，其中xml_parser目录提供解析xml的能力。而"opendrive_adapter.cc"则实现了地图的加载，转换为程序中的Map对象。然后地图在"hdmap_impl.cc"中提供一系列api接口给其他模块使用。  
-下面先介绍下地图消息格式，主要在proto目录。  
-"map.proto" 分为地图头部信息和结构体，头部信息主要介绍了地图的基本信息“版本，时间，投影方法，地图大小，厂家等”。结构体主要是道路的不同组成部分，包括“人行横道，路口区域，车道，停车观察，信号灯，让路标志，重叠区域，禁止停车，减速带，道路，停车区域，路边的小路，或者行人走的路”。  
-
-<a name="header" />
-
-#### 地图信息头
+### Header
 首先是地图的基本信息
-```
+```protobuf
 message Header {
   optional bytes version = 1;   //地图版本
   optional bytes date = 2;      //地图时间
@@ -91,101 +59,86 @@ message Header {
   optional bytes vendor = 12;         //供应商
 }
 ```
-下面是地图的道路信息，其中有2个标志(StopSign，YieldSign)是美国才有的，后来查看了下知乎发现对应到国内是(停，让)，具体的含义都是一样，停车的意思是到路口先停止，看下有没有车，然后再开始启动，让车就是先让行，比如交汇路口，理应让直行的车辆先通过，然后再汇入道路。[参考](https://www.zhihu.com/question/20512694)  
-下面在介绍下overlap，overlap在注释里的解释是“任何一对在地图上重合的东西，包括（车道，路口，人行横道）”，比如路口的人行横道和道路是重叠的，还有一些交通标志和道路也是重叠的，这是创造的一个逻辑概念。（不知道这样理解是否正确）  
-
-```
-message Map {
-  optional Header header = 1;        //上面所说的地图基本信息
-
-  repeated Crosswalk crosswalk = 2;  //人行横道
-  repeated Junction junction = 3;    //交叉路口
-  repeated Lane lane = 4;           //车道
-  repeated StopSign stop_sign = 5;  //停车标志
-  repeated Signal signal = 6;       //信号灯
-  repeated YieldSign yield = 7;     //让车标志
-  repeated Overlap overlap = 8;     //重叠区域
-  repeated ClearArea clear_area = 9;  //禁止停车区域
-  repeated SpeedBump speed_bump = 10;  //减速带
-  repeated Road road = 11;             //道路
-  repeated ParkingSpace parking_space = 12; //停车区域
-  repeated Sidewalk sidewalk = 13;  //路边的小路，或者行人走的路，现在的版本已经去掉？但是其他模块有些还有sidewalk
-}
-```
-
-<a name="crosswalk" />
-
-#### 人行横道
+### Crosswalk
 map_crosswalk.proto 人行横道(google图片搜索出了彩虹人行横道和三维人行横道，就问深度学习该怎么办？)  
-```
+```protobuf
 message Crosswalk {
   optional Id id = 1;        //编号
 
-  optional Polygon polygon = 2;  //多边形
+  optional Polygon polygon = 2;  //区域多边形
 
   repeated Id overlap_id = 3;   //重叠ID
 }
 ```
 ![crosswalk](img/crosswalk.jpg)  
 
-<a name="junction" />
 
-#### 路口
+
+### Junction
 map_junction.proto 路口，道路汇聚点
-```
+```protobuf
 message Junction {
   optional Id id = 1;    //编号
 
   optional Polygon polygon = 2;     //多边形
 
   repeated Id overlap_id = 3;    //重叠id
+  enum Type {
+    UNKNOWN = 0;
+    IN_ROAD = 1;     // 比如2车道变3车道的情况
+    CROSS_ROAD = 2;  // 常见的交叉十字路口等
+    FORK_ROAD = 3;   // 岔路
+    MAIN_SIDE = 4;   // todo
+    DEAD_END = 5;    // todo
+  };
+  optional Type type = 4;
 }
 ```
 ![junction](img/junction.jpg)  
 
-<a name="lane" />
 
-#### 车道
 
-map.lane.proto  车道线，介绍的比较复杂
-```
-// A lane is part of a roadway, that is designated for use by a single line of vehicles.
-// Most public roads (include highways) have more than two lanes.
+### Lane
+
+map_lane.proto  车道，指可通行区域中的单个车道，包含车道中心线和左、右车道线
+```protobuf
 message Lane {
   optional Id id = 1;         //编号
 
   // Central lane as reference trajectory, not necessary to be the geometry central.
-  optional Curve central_curve = 2;     //中心曲线
+  optional Curve central_curve = 2;         //车道中心线
 
   // Lane boundary curve.
-  optional LaneBoundary left_boundary = 3;          //左边界
-  optional LaneBoundary right_boundary = 4;         //右边界
+  optional LaneBoundary left_boundary = 3;  //左车道线
+  optional LaneBoundary right_boundary = 4; //右车道线
 
   // in meters.
-  optional double length = 5;                       //长度
+  optional double length = 5;                //车道长度
 
   // Speed limit of the lane, in meters per second.
-  optional double speed_limit = 6;           //速度限制
+  optional double speed_limit = 6;           //速度限制，m/s
 
   repeated Id overlap_id = 7;                //重叠区域id
 
   // All lanes can be driving into (or from).
-  repeated Id predecessor_id = 8;           //前任id
-  repeated Id successor_id = 9;             //继任者id
+  repeated Id predecessor_id = 8;  //前任id，可以由多条车道驶入该车道
+  repeated Id successor_id = 9;    //后任id，由该车道可以驶向多条车道
 
   // Neighbor lanes on the same direction.
-  repeated Id left_neighbor_forward_lane_id = 10;    //前面左边邻居id
-  repeated Id right_neighbor_forward_lane_id = 11;   //前面右边邻居id
-
-  enum LaneType {               //车道类型
-    NONE = 1;                  //无
+  repeated Id left_neighbor_forward_lane_id = 10;  //左边同向相邻车道id
+  repeated Id right_neighbor_forward_lane_id = 11; //右边同向相邻车道id
+  
+  //定义车道类型
+  enum LaneType {               
+    NONE = 1;                   //无
     CITY_DRIVING = 2;           //城市道路
-    BIKING = 3;                 //自行车
+    BIKING = 3;                 //自行车道
     SIDEWALK = 4;               //人行道
     PARKING = 5;                //停车
   };
   optional LaneType type = 12;         //车道类型
-
+  
+  // 定义车道转向类型
   enum LaneTurn {
     NO_TURN = 1;        //直行
     LEFT_TURN = 2;      //左转弯
@@ -194,14 +147,14 @@ message Lane {
   };
   optional LaneTurn turn = 13;          //转弯类型
 
-  repeated Id left_neighbor_reverse_lane_id = 14;       //保留（后面？）左边邻居
-  repeated Id right_neighbor_reverse_lane_id = 15;      //右边邻居
+  repeated Id left_neighbor_reverse_lane_id = 14;  //左边反向相邻车道id
+  repeated Id right_neighbor_reverse_lane_id = 15; //右边反向相邻车道id
 
   optional Id junction_id = 16;
 
   // Association between central point to closest boundary.
-  repeated LaneSampleAssociation left_sample = 17;      //中心点与最近左边界之间的关联
-  repeated LaneSampleAssociation right_sample = 18;     //中心点与最近右边界之间的关联
+  repeated LaneSampleAssociation left_sample = 17; //车道中心线与左车道线之间的距离
+  repeated LaneSampleAssociation right_sample = 18;//车道中心线与右车道线之间的距离
 
   enum LaneDirection {
     FORWARD = 1;     //前
@@ -211,18 +164,55 @@ message Lane {
   optional LaneDirection direction = 19;   //车道方向
 
   // Association between central point to closest road boundary.
-  repeated LaneSampleAssociation left_road_sample = 20;    //中心点与最近左路边界之间的关联
-  repeated LaneSampleAssociation right_road_sample = 21;    //中心点与最近右路边界之间的关联
+  repeated LaneSampleAssociation left_road_sample = 20; //车道中心线与道路左边界之间的距离
+  repeated LaneSampleAssociation right_road_sample = 21;//车道中心线与道路右边界之间的距离
+  
+  repeated Id self_reverse_lane_id = 22;  // todo
+}
+
+
+// 定义车道线类型，表示坐标 s 处的车道线的类型。此处可以是多种类型，比如某个坐标处既是白实线，又是道路边线
+message LaneBoundaryType {
+  enum Type {
+    UNKNOWN = 0;
+    DOTTED_YELLOW = 1;  // 黄虚线
+    DOTTED_WHITE = 2;   // 白虚线
+    SOLID_YELLOW = 3;   // 黄实线
+    SOLID_WHITE = 4;    // 白实线
+    DOUBLE_YELLOW = 5;  // 双黄线
+    CURB = 6;           // 道路边线
+  };
+  // Offset relative to the starting point of boundary
+  optional double s = 1;
+  // support multiple types
+  repeated Type types = 2;
+}
+
+// 定义车道线，主要由曲线及离散的“车道线类型”构成
+message LaneBoundary {
+  optional Curve curve = 1;
+
+  optional double length = 2;
+  // indicate whether the lane boundary exists in real world
+  optional bool virtual = 3;
+  // in ascending order of s
+  repeated LaneBoundaryType boundary_type = 4;
+}
+
+// Association between central point to closest boundary.
+message LaneSampleAssociation {
+  optional double s = 1;
+  optional double width = 2;
 }
 ```
 ![lane](img/lane.jpg)  
 
-<a name="stop_sign" />
+![lane](img/lane.png)
 
-#### 停止信号
+### StopSign
 
-map_stop_sign.proto 停止信号
-```
+map_stop_sign.proto 停车标志
+```protobuf
 message StopSign {
 
   optional Id id = 1;         //编号
@@ -244,80 +234,102 @@ message StopSign {
 ```
 ![StopSign](img/StopSign.jpg)  
 
-<a name="signal" />
 
-#### 交通信号标志
 
-map_signal.proto  交通信号标志
-```
+### Signal
+
+map_signal.proto  交通信号灯
+```protobuf
+// 定义子交通灯
 message Subsignal {
   enum Type {
-    UNKNOWN = 1;    //未知
-    CIRCLE = 2;     //圈???
-    ARROW_LEFT = 3;  //左边
-    ARROW_FORWARD = 4;  //前面
-    ARROW_RIGHT = 5;    //右边
-    ARROW_LEFT_AND_FORWARD = 6;   //左前
-    ARROW_RIGHT_AND_FORWARD = 7;  //右前
-    ARROW_U_TURN = 8;   //掉头
+    UNKNOWN = 1;                //未知
+    CIRCLE = 2;                 //圆圈
+    ARROW_LEFT = 3;             //向左箭头
+    ARROW_FORWARD = 4;          //向前箭头
+    ARROW_RIGHT = 5;            //向右箭头
+    ARROW_LEFT_AND_FORWARD = 6;   //左前箭头
+    ARROW_RIGHT_AND_FORWARD = 7;  //右前箭头
+    ARROW_U_TURN = 8;             //掉头
   };
 
   optional Id id = 1;
   optional Type type = 2;
 
   // Location of the center of the bulb. now no data support.
-  optional apollo.common.PointENU location = 3;    //也是基础类型？
+  optional apollo.common.PointENU location = 3;  //交通灯的中心的世界坐标
 }
 
+// 定义补充信息
+message SignInfo {
+  enum Type {
+    None = 0;
+    NO_RIGHT_TURN_ON_RED = 1;  //右转不需要等红灯的类型
+  };
+
+  optional Type type = 1;
+}
+
+// 交通信号灯总是由一组子交通灯组成
 message Signal {
   enum Type {
-    UNKNOWN = 1;
-    MIX_2_HORIZONTAL = 2;
-    MIX_2_VERTICAL = 3;
-    MIX_3_HORIZONTAL = 4;
-    MIX_3_VERTICAL = 5;
-    SINGLE = 6;
+    UNKNOWN = 1;            //未知
+    MIX_2_HORIZONTAL = 2;   //2个子交通灯水平分布的类型
+    MIX_2_VERTICAL = 3;     //2个子交通灯竖直分布的类型
+    MIX_3_HORIZONTAL = 4;   //3个子交通灯水平分布的类型
+    MIX_3_VERTICAL = 5;     //3个子交通灯竖直分布的类型
+    SINGLE = 6;             //单个交通灯的类型
   };
 
   optional Id id = 1;
-  optional Polygon boundary = 2;    //多边形
-  repeated Subsignal subsignal = 3;   //子信号
+  optional Polygon boundary = 2;     //多边形
+  repeated Subsignal subsignal = 3;  //子交通灯
   // TODO: add orientation. now no data support.
-  repeated Id overlap_id = 4;   //重叠id
-  optional Type type = 5;      //这里的类型是主要指交通标识的个数及位置？？
+  repeated Id overlap_id = 4;  //重叠id
+  optional Type type = 5;      //类型
   // stop line
-  repeated Curve stop_line = 6;     //在哪里结束？
+  repeated Curve stop_line = 6;  //该交通信号灯对应的停止线
+  
+  repeated SignInfo sign_info = 7;  //补充信息
 }
 ```
 ![Signal](img/Signal.jpg)    
 
-<a name="yield" />
 
-#### 让行
 
-map_yield_sign.proto    让行标志（美国才有）
-```
+### YieldSign
+
+map_yield_sign.proto    让行标志
+```protobuf
 message YieldSign {
   optional Id id = 1;       //编号
 
-  repeated Curve stop_line = 2;    //在哪里结束
+  repeated Curve stop_line = 2;    //让行标志对应的停车线
 
   repeated Id overlap_id = 3;     //重叠id
 }
 ```
 ![YieldSign](img/YieldSign.jpg)    
 
-<a name="overlap" />
 
-#### 重叠区域
+
+### Overlap
 
 map_overlap.proto  这里只介绍了LaneOverlapInfo，其他的还没有对应的格式
-```
+```protobuf
 message LaneOverlapInfo {
   optional double start_s = 1;  //position (s-coordinate)
   optional double end_s = 2;    //position (s-coordinate)
   optional bool is_merge = 3;
+  
+  optional Id region_overlap_id = 4;
 }
+
+message RegionOverlapInfo {
+  optional Id id = 1;
+  repeated Polygon polygon = 2;
+}
+
 // Information about one object in the overlap.
 message ObjectOverlapInfo {
   optional Id id = 1;
@@ -332,7 +344,8 @@ message ObjectOverlapInfo {
     ClearAreaOverlapInfo clear_area_overlap_info = 9;
     SpeedBumpOverlapInfo speed_bump_overlap_info = 10;
     ParkingSpaceOverlapInfo parking_space_overlap_info = 11;
-    SidewalkOverlapInfo sidewalk_overlap_info = 12;
+    PNCJunctionOverlapInfo pnc_junction_overlap_info = 12;
+    RSUOverlapInfo rsu_overlap_info = 13;
   }
 }
 
@@ -343,15 +356,17 @@ message Overlap {
 
   // Information about one overlap, include all overlapped objects.
   repeated ObjectOverlapInfo object = 2;
+  
+  repeated RegionOverlapInfo region_overlap = 3;
 }
 ```
 > 逻辑概念，没有具体的规则显示这个区域
 
-<a name="cleararea" />
 
-#### 禁止停车
-map_clear_area.proto  禁止停车
-```
+
+### ClearArea
+map_clear_area.proto  禁止停车区域
+```protobuf
 // A clear area means in which stopping car is prohibited
 
 message ClearArea {
@@ -362,7 +377,12 @@ message ClearArea {
 ```
 ![ClearArea](img/ClearArea.jpg)  
 
+
+
+### SpeedBump
+
 map_speed_bump.proto  减速带
+
 ```
 message SpeedBump {
     optional Id id = 1;          //编号
@@ -372,11 +392,33 @@ message SpeedBump {
 ```
 ![SpeedBump](img/SpeedBump.jpg)  
 
-<a name="road" />
 
-#### 道路信息
-map_road.proto 道路的信息，是由一些RoadSection组成
-```
+
+### Road
+map_road.proto 道路的信息，由至少一个 RoadSection 组成，而且一旦包含多个 RoadSection，则这些 RoadSection 必须沿着道路的实际顺序排列
+```protobuf
+message BoundaryEdge {
+  optional Curve curve = 1;
+  enum Type {
+    UNKNOWN = 0;
+    NORMAL = 1;
+    LEFT_BOUNDARY = 2;   //左边界
+    RIGHT_BOUNDARY = 3;  //右边界
+  };
+  optional Type type = 2;
+}
+
+message BoundaryPolygon {
+  repeated BoundaryEdge edge = 1;
+}
+
+// boundary with holes
+message RoadBoundary {
+  optional BoundaryPolygon outer_polygon = 1;
+  // if boundary without hole, hole is null
+  repeated BoundaryPolygon hole = 2;
+}
+
 // road section defines a road cross-section, At least one section must be defined in order to
 // use a road, If multiple road sections are defined, they must be listed in order along the road
 message RoadSection {
@@ -395,13 +437,21 @@ message Road {
 
   // if lane road not in the junction, junction id is null.
   optional Id junction_id = 3;
+  
+  enum Type {
+    UNKNOWN = 0;
+    HIGHWAY = 1;    //高速公路
+    CITY_ROAD = 2;  //城市道路
+    PARK = 3;       //停车场
+  };
+  optional Type type = 4;
 }
 ```
 ![Road](img/Road.jpg)    
 
-<a name="parking" />
 
-#### 停车区域
+
+### ParkingSpace
 
 map_parking.proto  停车区域
 ```
@@ -418,43 +468,72 @@ message ParkingSpace {
 ```
 ![ParkingSpace](img/ParkingSpace.jpg)  
 
-<a name="sidewalk" />
 
-#### 行人道路
 
-map_sidewalk.proto  路边的小路，或者行人走的路
-```
-// A sidewalk (American English) or pavement (British English), also known as a footpath or footway, is a path along the side of a road.
+### PNCJunction
 
-message Sidewalk {
+map_pnc_junction.proto  PNC路口（todo）
+
+```protobuf
+message Passage {
   optional Id id = 1;
-  repeated Id overlap_id = 2;
-  optional Polygon polygon = 3;
+
+  repeated Id signal_id = 2;
+  repeated Id yield_id = 3;
+  repeated Id stop_sign_id = 4;
+  repeated Id lane_id = 5;
+
+  enum Type {
+    UNKNOWN = 0;
+    ENTRANCE = 1;
+    EXIT = 2;
+  };
+  optional Type type = 6;
+};
+
+message PassageGroup {
+  optional Id id = 1;
+
+  repeated Passage passage = 2;
+};
+
+message PNCJunction {
+  optional Id id = 1;
+
+  optional Polygon polygon = 2;
+
+  repeated Id overlap_id = 3;
+  
+  repeated PassageGroup passage_group = 4;
 }
 ```
-![Sidewalk](img/Sidewalk.jpg)  
 
-其中还包括剩下的4个没有介绍
-map_id.proto
-这里的map_id是基础id?
+
+
+### RSU
+
+map_rsu.proto  路边单元（垃圾箱之类的？）todo
+```protobuf
+message RSU {
+  optional Id id = 1;
+  optional Id junction_id = 2;
+  repeated Id overlap_id = 3;
+};
 ```
+
+
+### 其他  
+
+map_id.proto  基本数据类型
+```protobuf
 message Id {
   optional string id = 1;     //id，字符类型
 }
 ```
 
-map_speed_control.proto  限制速度
-```
-message SpeedControl {
-  optional string name = 1;
-  optional apollo.hdmap.Polygon polygon = 2;
-  optional double speed_limit = 3;
-}
-```
 
-
-map_geometry.proto  地图的几何形状？
-```
+map_geometry.proto  基本数据类型，定义地图元素所需要的几何结构
+```protobuf
 // Polygon, not necessary convex.
 message Polygon {
   repeated apollo.common.PointENU point = 1;
@@ -482,18 +561,25 @@ message Curve {
 }
 ```
 
-map_pnc_junction.proto  PNC路口（具体的场景是什么？？）
-```
-message PNCJunction {
-  optional Id id = 1;
+map_speed_control.proto  限制速度，辅助数据类型
 
-  optional Polygon polygon = 2;
+```protobuf
+// This proto defines the format of an auxiliary file that helps to
+// define the speed limit on certain area of road.
+// Apollo can use this file to quickly fix speed problems on maps,
+// instead of waiting for updating map data.
+message SpeedControl {
+  optional string name = 1;
+  optional apollo.hdmap.Polygon polygon = 2;
+  optional double speed_limit = 3;
+}
 
-  repeated Id overlap_id = 3;
+message SpeedControls {
+  repeated SpeedControl speed_control = 1;
 }
 ```
 
-<a name="parse" />
+
 
 ## opendriver地图解析
 
