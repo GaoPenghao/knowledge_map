@@ -1,35 +1,4 @@
-# Dig into Apollo - Routing ![GitHub](https://img.shields.io/github/license/daohu527/Dig-into-Apollo.svg?style=popout)
-
-> 青，取之于蓝而青于蓝；冰，水为之而寒于水。
-
-
-## Table of Contents
-- [Routing模块简介](#introduction)
-- [基础知识](#base)
-  - [Demo](#demo)
-  - [地图](#map)
-  - [最短距离](#shortest_path)
-- [Routing模块分析](#routing)
-  - [创建Routing地图](#create_routing_map)
-    - [建图流程](#create_map_main)
-    - [创建节点](#create_node)
-    - [创建边](#create_edge)
-  - [Routing主流程](#routing_main)
-    - [Routing类](#routing_class)
-    - [导航](#navigator_class)
-    - [子节点](#subnode)
-    - [节点切分](#generate_subnode)
-    - [生成子图](#generate_subgraph)
-    - [Astar算法](#astar)
-- [调试工具](#tools)
-- [问题](#question)
-- [OSM数据查找](#osm_find)
-- [Reference](#reference)
-  
-
-<a name="introduction" />
-
-## Routing模块简介
+# Routing模块简介
 Routing类似于现在开车时用到的导航模块，通常考虑的是起点到终点的最优路径（通常是最短路径），Routing考虑的是起点到终点的最短路径，而Planning则是行驶过程中，当前一小段时间如何行驶，需要考虑当前路况，是否有障碍物。Routing模块则不需要考虑这些信息，只需要做一个长期的规划路径即可，过程如下：  
 
 ![introduction](img/introduction.png)  
@@ -38,17 +7,13 @@ Routing类似于现在开车时用到的导航模块，通常考虑的是起点�
 * **Routing** - 主要关注起点到终点的长期路径，根据起点到终点之间的道路，选择一条最优路径。  
 * **Planning** - 主要关注几秒钟之内汽车的行驶路径，根据当前行驶过程中的交通规则，车辆行人等信息，规划一条短期路径。  
 
-<a name="base" />
 
-## 基础知识
 
-<a name="demo" />
+# 基础知识
 
-#### Demo
+## Demo
 [演示地址](https://daohu527.github.io/)  
-我们通过"OSM Pathfinding"作为例子，来详细讲解整个过程，感谢@mplewis。  
-首先我们通过如下的视频演示看下Routing寻找路径的过程，查找的是深圳南山区的地图：
-![]()
+
 1. 首先选择查找算法，有: A*, Breadth First Search, Greedy Best First Search, Uniform Cost Search, Depth First Search。
 2. 选择起点
 3. 选择终点
@@ -61,21 +26,22 @@ Routing类似于现在开车时用到的导航模块，通常考虑的是起点�
 > 如果图的规模太大，以1000个举例，只算两个点之间互相有连接的情况，1000*1000就是100万个点，如果点的规模更大，那么就需要采用redis数据库来提高查找效率了。
 
 下面我们先介绍上面的例子是如何工作的。
-<a name="map" />
 
-#### 地图
+## 地图
 首先我们以openstreetmap为例来介绍下地图是如何组成的。[开放街道地图](https://www.openstreetmap.org/)（英语：OpenStreetMap，缩写为OSM）是一个建构自由内容之网上地图协作计划，目标是创造一个内容自由且能让所有人编辑的世界地图，并且让一般的移动设备有方便的导航方案。因为这个地图是一个开源地图，所以可以灵活和自由的获取地图资源。
 接着看下openstreetmap的基本元素：
 **Node**![node](img/30px-Osm_element_node.svg.png)  
 节点表示由其纬度和经度定义的地球表面上的特定点。每个节点至少包括id号和一对坐标。节点也可用于定义独立点功能。例如，节点可以代表公园长椅或水井。节点也可以定义道路(Way)的形状，节点是一切形状的基础。  
-```javascipt
+
+```xml
 <node id="25496583" lat="51.5173639" lon="-0.140043" version="1" changeset="203496" user="80n" uid="1238" visible="true" timestamp="2007-01-28T11:40:26Z">
     <tag k="highway" v="traffic_signals"/>
 </node>
 ```
 **Way**![way](img/30px-Osm_element_way.svg.png)![way](img/30px-Osm_element_closedway.svg.png)![way](img/30px-Osm_element_area.svg.png)  
-道路是包含2到2,000个有序节点的折线组成，用于表示线性特征，例如河流和道路。道路也可以表示区域（实心多边形）的边界，例如建筑物或森林。在这种情况下，道路的第一个和最后一个节点将是相同的。这被称为“封闭的方式”。  
-```javascipt
+方式是包含2到2,000个有序节点的折线组成，用于表示线性特征，例如河流和道路。方式也可以表示区域（实心多边形)的边界，例如建筑物或森林。在这种情况下，方式的第一个和最后一个节点将是相同的。这被称为“封闭的方式”。  
+
+```xml
   <way id="5090250" visible="true" timestamp="2009-01-19T19:07:25Z" version="8" changeset="816806" user="Blumpsy" uid="64226">
     <nd ref="822403"/>
     <nd ref="21533912"/>
@@ -93,10 +59,11 @@ Routing类似于现在开车时用到的导航模块，通常考虑的是起点�
   </way>
 ```
 **Relation**![relation](img/30px-Osm_element_relation.svg.png)  
-关系是记录两个或更多个数据元素（节点，方式和/或其他关系）之间的关系的多用途数据结构。例子包括：  
+关系是记录两个或更多个数据元素（节点，方式或其他元素)之间的关系的多用途数据结构。例子包括：  
+
 * 路线关系，列出形成主要（编号）高速公路，自行车路线或公交路线的方式。
 * 转弯限制，表示你无法从一种方式转向另一种方式。
-* 描述具有孔的区域（其边界是“外部方式”）的多面体（“内部方式”）。
+* 描述具有孔的区域（其边界是“外部方式”）和多面体（“内部方式”）。
 
 **Tag**![tag](img/30px-Osm_element_tag.svg.png)  
 所有类型的数据元素（节点，方式和关系）以及变更集都可以包含标签。标签描述了它们所附着的特定元素的含义。标签由两个自由格式文本字段组成; 'Key'和'Vaule'。例如，“高速公路”=“住宅”定义了一条道路。元素不能有2个带有相同“key”的标签，“key”必须是唯一的。例如，您不能将元素标记为amenity = restaurant和amenity = bar。  
@@ -106,12 +73,10 @@ Routing类似于现在开车时用到的导航模块，通常考虑的是起点�
 1. Osmarender: 一个基于可扩展样式表语言转换 (XSLT) 的渲染器,能够创建可缩放矢量图形(SVG), SVG可以用浏览器观看或转换成位图.
 2. Mapnik: 一个用C++写的非常快的渲染器,可以生成位图(png, jpeg)和矢量图形(pdf, svg, postscript)。
 
-
-<a name="shortest_path" />
-
-#### 最短距离
+## 图搜索
 我们先看一下经典的例子：最短路径。  
-在图论中，最短路径问题是在图中的两个顶点之间找到路径，使得其边的权重之和最小化的问题。而在地图上找到两个点之间最短路径的问题可以被建模为图中最短路径问题的特殊情况，其中顶点对应于交叉点并且边缘对应于路段，每个路段对应于路段的长度。  
+
+在图论中，最短路径问题是在图中的两个顶点之间找到路径，使得其边的权重之和最小化的问题。而在地图上找到两个点之间最短路径的问题可以被建模为图中最短路径问题的特殊情况，其中节点对应于路口，边对应于路段，边的权重对应于路段的长度。 
 ![shortest_path](img/375px-Shortest_path_with_direct_weights.svg.png)  
 
 最短路径算法：  
@@ -123,24 +88,24 @@ Routing类似于现在开车时用到的导航模块，通常考虑的是起点�
 * Johnson算法
 * Bi-Direction BFS算法
 
+在地图上查找两个点之间的最短距离，我们就可以把 node 当做节点，way 当做边，从而把地图抽象为一个有向图，然后通过上述算法，查找到当前2点之间的最短路径，并且输出，这就是每次我们查找起点和终点的过程。  
 
-在地图上查找两个点之间的最短距离，我们就可以把道路的长度当做边，路口当做节点，通过把道路抽象为一个有向图，然后通过上述算法，查找到当前2点之间的最短路径，并且输出，这就是每次我们查找起点和终点的过程。  
 所以要查找起点到终点之间的路径，需要经过以下几个步骤：  
-1. 获取地图的原始数据，节点和道路信息。
+
+1. 获取地图的原始数据，node 和 way 信息。
 2. 通过上述信息，构建有向图。
 3. 采用最短路径算法，找到2点之间的最短距离。
 
 > 实际上，真实场景的地图导航，查找2点之间的路径，可能不是实时计算出来的，假设有100个人在查询“北京机场”到“天安门”的路线，第一个人的路线可能是实时计算得到的，而其他99个人都是用的缓存的数据，在第一个人查到之后，后面的99个人就不需要重复计算了。  
-对于频繁查找的路线，也可以在晚上统一计算，然后保存起来，可以利用存储换速度，除非道路有变化（新修路或者道路维修，桥断了），然后再重新计算。  
-多样化的需求，比如可以选择高速优先还是不走高速，地铁优先，少换乘等，这些都需要构建层次和结构化的信息。  
-根据用户的反馈实时的更新路况，比如路上有10个人在用地图导航，发现在某一段大家都开的很慢，或者有用户反馈堵车，就更新当前路况。  
-所以地图是一个强者越强的市场，用户越多，数据就更新的就越快，地图就越准确，用的人就越多；用的人越少，数据更新的就越慢，假设一条路上只有一个用户，一个人开的慢，并不能反馈当前道路拥堵，用该地图的其它用户过去之后，发现堵车，就导致用户体验很差，下次就不会再用这个地图了。所以地图必须需要一定的用户量才能活下去，而且强者越强。  
+> 对于频繁查找的路线，也可以提前统一计算，然后保存起来，可以利用存储换速度（这应该就是离线导航地图），除非道路有变化（新修路或者道路维修，桥断了），然后再重新计算。  
+> 多样化的需求，比如可以选择高速优先还是不走高速，地铁优先，少换乘等，这些都需要构建层次和结构化的信息。  
+> 根据用户的反馈实时的更新路况，比如路上有10个人在用地图导航，发现在某一段大家都开的很慢，或者有用户反馈堵车，就更新当前路况。  
+> 所以地图是一个强者越强的市场，用户越多，数据就更新的就越快，地图就越准确，用的人就越多；用的人越少，数据更新的就越慢，假设一条路上只有一个用户，一个人开的慢，并不能反馈当前道路拥堵，用该地图的其它用户过去之后，发现堵车，就导致用户体验很差，下次就不会再用这个地图了。所以地图必须需要一定的用户量才能活下去，而且强者越强。  
 
 
-
-<a name="routing" />
 
 # Routing模块分析
+
 分析Routing模块之前，我们只需要能够解决以下几个问题，就算是把routing模块掌握清楚了。  
 1. 如何从A点到B点
 2. 如何规避某些点 - 查找的时候发现是黑名单里的节点，则选择跳过。
@@ -148,15 +113,22 @@ Routing类似于现在开车时用到的导航模块，通常考虑的是起点�
 4. 如何设置固定线路，而且不会变？最后routing输出的结果是什么？固定成文件的形式。
 
 
-<a name="create_routing_map" />
 
-## 创建Routing地图
-通过上面的介绍可以知道，routing需要的是一个拓扑结构的图，要想做routing，第一步就是要把原始的地图转换成包含拓扑结构的图，apollo中也实现了类似的操作，把base_map转换为routing_map，这里的base_map就是高精度地图，而routing_map则是导航地图，routing_map的结构为一个有向图。对应的例子在"modules/map/data/demo"中，这个例子比较简陋，因为routing_map.txt中只包含一个节点(Node)，没有边(Edge)信息。  
-apollo建图的实现在"routing/topo_creator"中，首先apollo的拓扑图中的节点和上面介绍的传统的节点不一样，我们前面的例子中，节点就是路的起点和终点，边就是路，而自动驾驶中的道路是车道线级别的，原来的这种定义点和边的方式就不适用了（定义不了车道），所以apollo中引用的新的概念，apollo中的点就是一条车道，而边则是车道和车道之间的连接，点对应具体的车道，而边则是一个虚拟的概念，表示车道之间的关系。下面我们可以先看下apollo中道路(road)和车道(lane)的概念。  
-![lane](img/lane.png)  
-可以看到一条道路(road)，包含多个车道(lane)，图中一条道路分成了2段，每一段包含3条车道(lane)，车道的信息见图中，主要标识了车道唯一id，左边界，右边界，参考线，长度，前车道，后车道，左边相邻的车道，右边相邻的车道等，通过这些结构化的信息，我们就知道车道之间的相互关系，也就知道了我们能否到达下一个车道，从而规划出一条到达目的地的车道线级别的路线，Planning模块在根据规划好的线路进行行驶，因为已经到车道线级别了，所以相对规划起来就简单很多。最后我们会建立一张如下的图，其中**节点是一个个的lane，而边则代表lane之间的连接**。
-![graph](img/graph.jpg)  
-其中节点和边的结构在protobuf中定义，在文件"modules/routing/proto/topo_graph.proto"中，其中：  
+
+# 创建Routing地图
+通过上面的介绍可以知道，routing需要的是一个拓扑结构的图，要想做routing，第一步就是要把原始的地图转换成包含拓扑结构的图，apollo中也实现了类似的操作，把base_map转换为routing_map，这里的base_map就是高精度地图，而routing_map则是导航地图，routing_map的结构为一个有向图。对应的例子在"modules/map/data/demo"中，这个例子比较简陋，因为routing_map.txt中只包含一个节点(Node)，没有边(Edge)信息。
+
+apollo建图的实现在"routing/topo_creator"中，由base_map生成routing_map的方法如下，可以看到运行了一个bash文件，打开这个bash文件会发现，其最终运行的是由"routing/topo_creator.cc"编译生成的可执行文件。
+
+```bash
+dir_name=modules/map/data/demo # example map directory
+ ./scripts/generate_routing_topo_graph.sh --map_dir ${dir_name}
+```
+
+首先apollo的拓扑图中的节点和上面介绍的传统的节点不一样，我们前面的例子中，节点就是路的起点和终点，边就是路，而自动驾驶中的道路是车道线级别的，原来的这种定义点和边的方式就不适用了（定义不了车道），所以apollo中引用的新的概念，apollo中的点就是一条车道，而边则是车道和车道之间的连接，点对应具体的车道，而边则是一个虚拟的概念，表示车道之间的关系。下面我们可以先看下apollo中道路(road)和车道(lane)的概念。 
+![lane](img/lane.png)  可以看到一条道路(road)，包含多个车道(lane)，图中一条道路分成了2段，每一段包含3条车道(lane)，车道的信息见图中，主要标识了车道唯一id，左边界，右边界，参考线，长度，前车道，后车道，左边相邻的车道，右边相邻的车道等，通过这些结构化的信息，我们就知道车道之间的相互关系，也就知道了我们能否到达下一个车道，从而规划出一条到达目的地的车道线级别的路线，Planning模块在根据规划好的线路进行行驶，因为已经到车道线级别了，所以相对规划起来就简单很多。最后我们会建立一张如下的图，其中**节点是一个个的lane，而边则代表lane之间的连接**。
+![graph](img/graph.jpg)  其中节点和边的结构在protobuf中定义，在文件"modules/routing/proto/topo_graph.proto"中，其中：  
+
 * **NODE** - 包括车道唯一id，长度，左边出口，右边出口（这里的出口对应车道虚线的部分，或者自己定义的一段允许变道的路段），路段代价（限速或者拐弯的路段会增加成本，代价系数在routing_config.pb.txt中定义)，中心线（虚拟的，用于生成参考线），是否可见，车道所属的道路id。  
 * **EDGE** - 则包括起始车道id，到达车道id，切换代价，方向（向前，向左，向右）。  
 我们以上图中的例子来说明：  
@@ -183,10 +155,8 @@ turn                            = NO_TURN  // 没有拐弯，有些车道本身�
 direction                       = FORWARD  // 前向，反向，或者双向
 speed_limit                     = 30       // 限速30km/h
 ```
-<a name="create_map_main" />
-
-#### 建图流程
-可以看到对比map结构中的lane，graph中的节点和边省去了很多信息，主要关注的是lane之间的关系。在理解了上述数据结构之后，理解建图的过程就轻松多了，下面我们结合代码来分析具体的建图流程。建图的代码目录为"routing/topo_creator"，其文件结构如下：  
+## 建图流程
+可以看到，相比于map结构中的lane，graph中的节点和边省去了很多信息，主要关注的是lane之间的关系。在理解了上述数据结构之后，理解建图的过程就轻松多了，下面我们结合代码来分析具体的建图流程。建图的代码目录为"routing/topo_creator"，其文件结构如下：  
 ```
 .
 ├── BUILD
@@ -199,129 +169,27 @@ speed_limit                     = 30       // 限速30km/h
 ├── node_creator.h
 └── topo_creator.cc           // main函数
 ```
-编译生成可执行文件"topo_creator"，地图需要事先通过"topo_creator"把base_map转换为routing_map。其中建图的主流程在"graph_creator.cc"，并且创建节点和边。建图的主流程在函数"GraphCreator::Create()"中，下面我们具体分析这个函数。  
-```c++
-bool GraphCreator::Create() {
-  // 这里注意，有2种格式，一种是openstreet格式，通过OpendriveAdapter来读取
-  // 另外一种是apollo自己定义的格式。
-  if (common::util::EndWith(base_map_file_path_, ".xml")) {
-    if (!hdmap::adapter::OpendriveAdapter::LoadData(base_map_file_path_,
-                                                    &pbmap_)) {
-      AERROR << "Failed to load base map file from " << base_map_file_path_;
-      return false;
-    }
-  } else {
-    if (!common::util::GetProtoFromFile(base_map_file_path_, &pbmap_)) {
-      AERROR << "Failed to load base map file from " << base_map_file_path_;
-      return false;
-    }
-  }
+编译生成可执行文件"topo_creator"，地图需要事先通过"topo_creator"把base_map转换为routing_map。其中建图的主流程在"graph_creator.cc"，并且创建节点和边。建图的主流程在函数"GraphCreator::Create()"中，其主要逻辑结构如下。  
 
-  // graph_为最后保存的图，消息格式在topo_graph.proto中申明
-  graph_.set_hdmap_version(pbmap_.header().version());
-  graph_.set_hdmap_district(pbmap_.header().district());
+1. 从base_map中读取道路信息
+2. 初始化车道黑名单（禁止的车道集合）
+   - 将非城市道路加入车道黑名单
+3. 遍历车道，创建节点
+   - 忽略在黑名单中的车道
+   - 忽略是掉头车道但是车道的曲率半径小于车辆的最小掉头半径
+   - 创建并储存节点
+4. 遍历车道，创建边
+   - 忽略在黑名单中的车道
+   - 找到车道对应的节点
+   - 根据当前车道和其继任车道创建直行的边
+   - 如果当前车道长度小于最小变道预备距离，则忽略
+   - 如果车道有左边界且允许跨越，则创建向左变道的边
+   - 如果车道有右边界且允许跨越，则创建向右变道的边
+5. 将graph的信息保存至routing_map中
 
-  // 从base_map中读取道路和lane对应关系，base_map的消息结构在map.proto和map_road.proto中
-  for (const auto& road : pbmap_.road()) {
-    for (const auto& section : road.section()) {
-      for (const auto& lane_id : section.lane_id()) {
-        road_id_map_[lane_id.id()] = road.id().id();
-      }
-    }
-  }
+所以routing_map中就是graph_protobuf格式的固化，后面routing模块会读取创建好的routing_map通过astar算法来进行路径规划。  
 
-  // 初始化禁止的车道线，从配置文件中读取最小掉头半径
-  InitForbiddenLanes();
-  const double min_turn_radius =
-      VehicleConfigHelper::GetConfig().vehicle_param().min_turn_radius();
-
-  // 遍历base_map中的lane，并且创建节点。
-  for (const auto& lane : pbmap_.lane()) {
-    const auto& lane_id = lane.id().id();
-    // 跳过不是城市道路(CITY_DRIVING)的车道
-    if (forbidden_lane_id_set_.find(lane_id) != forbidden_lane_id_set_.end()) {
-      ADEBUG << "Ignored lane id: " << lane_id
-             << " because its type is NOT CITY_DRIVING.";
-      continue;
-    }
-    // 跳过掉头曲率太小的车道
-    if (lane.turn() == hdmap::Lane::U_TURN &&
-        !IsValidUTurn(lane, min_turn_radius)) {
-      ADEBUG << "The u-turn lane radius is too small for the vehicle to turn";
-      continue;
-    }
-    
-    // 存储图中节点index和lane_id的关系，因为通过node可以找到lane，
-    // 而通过lane_id需要遍历节点才能找到节点index。
-    node_index_map_[lane_id] = graph_.node_size();
-    
-    // 如果从road_id_map_中找到lane_id，则把创建节点的时候指定道路id，
-    // 如果没有找到那么road_id则为空。
-    const auto iter = road_id_map_.find(lane_id);
-    if (iter != road_id_map_.end()) {
-      node_creator::GetPbNode(lane, iter->second, routing_conf_,
-                              graph_.add_node());
-    } else {
-      AWARN << "Failed to find road id of lane " << lane_id;
-      node_creator::GetPbNode(lane, "", routing_conf_, graph_.add_node());
-    }
-  }
-
-  
-  std::string edge_id = "";
-  // 遍历base_map中的lane，并且创建边。
-  for (const auto& lane : pbmap_.lane()) {
-    const auto& lane_id = lane.id().id();
-    // 跳过不是城市道路(CITY_DRIVING)的车道
-    if (forbidden_lane_id_set_.find(lane_id) != forbidden_lane_id_set_.end()) {
-      ADEBUG << "Ignored lane id: " << lane_id
-             << " because its type is NOT CITY_DRIVING.";
-      continue;
-    }
-    
-    // 这里就是通过上面所说的通过lane_id找到node的index，得到节点，
-    // 如果不保存，则需要遍历所有节点通过lane_id来查找节点，原因为node中有lane_id，
-    // 而lane结构中没有node_id。
-    const auto& from_node = graph_.node(node_index_map_[lane_id]);
-
-    // 添加一条该节点到下一个节点的边，注意这里没有换道，所以方向为前。  
-    AddEdge(from_node, lane.successor_id(), Edge::FORWARD);
-    if (lane.length() < FLAGS_min_length_for_lane_change) {
-      continue;
-    }
-    // 车道有左边界，并且允许变道
-    // 添加一条该节点到左边邻居的边
-    if (lane.has_left_boundary() && IsAllowedToCross(lane.left_boundary())) {
-      AddEdge(from_node, lane.left_neighbor_forward_lane_id(), Edge::LEFT);
-    }
-    // 同上
-    if (lane.has_right_boundary() && IsAllowedToCross(lane.right_boundary())) {
-      AddEdge(from_node, lane.right_neighbor_forward_lane_id(), Edge::RIGHT);
-    }
-  }
-
-  ...
-  
-  // 保存routing_map文件，有2种格式txt和bin
-  if (!common::util::SetProtoToASCIIFile(graph_, txt_file)) {
-    AERROR << "Failed to dump topo data into file " << txt_file;
-    return false;
-  }
-  AINFO << "Txt file is dumped successfully. Path: " << txt_file;
-  if (!common::util::SetProtoToBinaryFile(graph_, bin_file)) {
-    AERROR << "Failed to dump topo data into file " << bin_file;
-    return false;
-  }
-  AINFO << "Bin file is dumped successfully. Path: " << bin_file;
-  return true;
-}
-```
-小结一下创建的图的流程，首先是从base_map中读取道路信息，之后遍历道路，先创建节点，然后创建节点的边，之后把图(点和边的信息)保存到routing_map中，所以routing_map中就是graph_protobuf格式的固化，后面routing模块会读取创建好的routing_map通过astar算法来进行路径规划。  
-
-
-<a name="create_node" />
-
-#### 创建节点
+## 创建节点
 接下来看下创建节点的过程，在函数"GetPbNode()"中:  
 ```c++
 void GetPbNode(const hdmap::Lane& lane, const std::string& road_id,
@@ -331,7 +199,6 @@ void GetPbNode(const hdmap::Lane& lane, const std::string& road_id,
   // 2. 初始化节点代价
   InitNodeCost(lane, routingconfig, node);
 }
-
 ```
 1. 初始化哪些节点信息呢？  
 ```c++
@@ -382,9 +249,7 @@ void InitNodeCost(const Lane& lane, const RoutingConfig& routing_config,
 }
 ```
 
-<a name="create_edge" />
-
-#### 创建边
+## 创建边
 接下来分析如何创建边，创建边的流程在函数"GetPbEdge()"中  
 ```c++
 void GetPbEdge(const Node& node_from, const Node& node_to,
@@ -414,19 +279,22 @@ void GetPbEdge(const Node& node_from, const Node& node_to,
   }
 }
 ```
-我们可以看下edge cost的曲线，因为"changing_area_length / routing_config.base_changing_length() < 1"，这个函数最小值为1，最大值为无穷。  
-![edge_cost](img/edge_cost.png)  
+我们可以看下edge cost的曲线，因为"changing_area_length / routing_config.base_changing_length() < 1"，这个函数最小值为1，最大值为无穷。因此ratio的取值范围为[1, inf)，且changing_area_length越小，其取值越大。
 
+![edge_cost](img/edge_cost.png)  
 
 到这里制作routing_map的流程就结束了，建图的主要目的是把base结构的map转换为graph结构的map，从而利用图结构来查找最佳路径，下面会分析如何通过routing_map得到规划好的路线。  
 
 
-<a name="routing_main" />
 
-## Routing主流程
-Routing模块的流程相对比较简单，主流程见下图：  
+
+# Routing主流程
+Routing模块的流程相对比较简单，主流程见下图：
+
 ![main](img/main.jpg)  
+
 把一些主要的流程摘要如下：  
+
 1. 在cyber中注册component，接收request请求，响应请求结果response
 2. 读取routing_map并且建图graph
 3. 获取request中的routing请求节点
@@ -469,10 +337,12 @@ class RoutingComponent final
 CYBER_REGISTER_COMPONENT(RoutingComponent)
 ```
 routing模块都按照cyber的模块申明和注册，cyber框架负责调用Init进行初始化，并且收到消息时候触发Proc执行。  
+
 我们先看下"Init"函数:  
+
 ```c++
 bool RoutingComponent::Init() {
-  // 设置消息qos，控制流量，创建消息发布response_writer_
+  // 1.设置消息qos，控制流量，创建消息发布response_writer_
   apollo::cyber::proto::RoleAttributes attr;
   attr.set_channel_name(FLAGS_routing_response_topic);
   auto qos = attr.mutable_qos_profile();
@@ -484,7 +354,7 @@ bool RoutingComponent::Init() {
   response_writer_ = node_->CreateWriter<RoutingResponse>(attr);
 
   ...
-  // 历史消息发布，和response_writer_类似
+  // 2.历史消息发布，和response_writer_类似
   response_history_writer_ = node_->CreateWriter<RoutingResponse>(attr_history);
   
   // 创建定时器
@@ -536,9 +406,7 @@ bool RoutingComponent::Proc(const std::shared_ptr<RoutingRequest>& request) {
 
 接下来我们来看routing的具体实现。  
 
-<a name="routing_class" />
-
-#### Routing类
+## Routing类
 "Routing"类的实现在"routing.h"和"routing.cc"中，首先看下"Routing"类引用的头文件：  
 ```c++
 #include "modules/common/monitor_log/monitor_log_buffer.h"
@@ -561,7 +429,7 @@ apollo::common::Status Routing::Init() {
 }
 ```
 
-之后会执行"Process"主流程，执行的过程如下：  
+之后会执行"Process"主流程，执行的过程如下：（todo） 
 ```c++
 bool Routing::Process(const std::shared_ptr<RoutingRequest>& routing_request,
                       RoutingResponse* const routing_response) {
@@ -580,10 +448,7 @@ bool Routing::Process(const std::shared_ptr<RoutingRequest>& routing_request,
 ```
 上述的过程总结一下就是，首先读取routing_map并初始化Navigator类，接着遍历routing_request，因为routing_request请求为一个个的点，所以先查看routing_request的点是否在路上，不在路上则找到最近的路，并且补充信息（不在路上的点则过不去），最后调用"navigator_ptr_->SearchRoute"返回routing响应。  
 
-
-<a name="navigator_class" />
-
-#### 导航
+## 导航
 Navigator初始化
 ```c++
 bool Navigator::Init(const RoutingRequest& request, const TopoGraph* graph,
@@ -599,8 +464,10 @@ bool Navigator::Init(const RoutingRequest& request, const TopoGraph* graph,
                                                      &topo_range_manager_);
 }
 ```
-在routing请求中可以指定黑名单路和车道，这样routing请求将不会计算这些车道。应用场景是需要避开拥堵路段，这需要能够根据情况实时请求，在routing_request中可以设置黑名单也刚好可以满足上面的需求，如果直接把黑名单路段固定，则是一个比较蠢的设计。  
+在routing请求中可以指定黑名单路和车道，这样routing请求将不会计算这些车道。应用场景是需要避开拥堵路段，这需要能够根据情况实时请求，在routing_request中可以设置黑名单也刚好可以满足上面的需求，如果直接把黑名单路段固定，则是一个比较蠢的设计。 
+
 剩下的一些过程比较简单，我们直接看主函数"SearchRouteByStrategy":  
+
 ```c++
 bool Navigator::SearchRouteByStrategy(
     const TopoGraph* graph, const std::vector<const TopoNode*>& way_nodes,
@@ -652,24 +519,26 @@ bool Navigator::SearchRouteByStrategy(
 }
 ```
 
-<a name="subnode" />
-
-#### 子节点
+## 子节点
 下面我们把子图的概念讲解一下，"AddBlackMapFromTerminal"中会把节点(这里的节点就是lane)切分，切分之后的数据保存在"TopoRangeManager"中，而"SubTopoGraph"会根据"TopoRangeManager"中的数据初始化子图。我们先理解下子节点的概念，节点就是一条lane，而子节点是对lane做了切割，把一条lane根据黑名单区域，生成几个子节点。用图来说明很形象：  
 
+## 节点切分
+节点的切分是根据TopoRangeManager生成好的区间，然后进行切分生成子节点。我们先看下如何生成"TopoRangeManager"，在"AddBlackMapFromTerminal"**输入参数为routing_request的开始lane，结束的lane，开始位置，结束位置，输出参数为分段好的区间(range)**，在"range_map_"中保存lane和lane中range的关系，其中key为节点，value为区间(range)。我们还是先看一张图，来描述这个过程：
 
-<a name="generate_subnode" />
-
-#### 节点切分
-节点的切分是根据TopoRangeManager生成好的区间，然后进行切分生成子节点。我们先看下如何生成"TopoRangeManager"，在"AddBlackMapFromTerminal"**输入参数为routing_request的开始lane，结束的lane，开始位置，结束位置，输出参数为分段好的区间(range)**，在"range_map_"中保存lane和lane中range的关系，其中key为节点，value为区间(range)。我们还是先看一张图，来描述这个过程：  
 ![range](img/range.jpg)  
+
 可以看到上图中有2条lane，lane1为[0, length1]，lan2为[0, length2]，routing_request的起点为start_s，终点为end_s（注意这里的起点和终点都是在对应lane中的位置，而不是整条路的长度）。之后会生成一个range_map，其中的键为node即对应的lane，值为切分好的range，只是这里的range比较特殊，拿lane1举例子，这里range的起点和终点都是start_s。之后再通过"GetSortedValidRange"找到合法的区间，这里就看到找到range为[0,start_s],[start_s,length1]。这样这个节点就切分成2个子节点。
-实际上上述特殊的例子只是为了把routing请求的起点和终点对lane做切分，这样做的好处可能是模块的功能能够统一，方便计算节点的代价。实际上真正的功能没用到，我们还是根据图来解释这个过程：  
+实际上上述特殊的例子只是为了把routing请求的起点和终点对lane做切分，这样做的好处可能是模块的功能能够统一，方便计算节点的代价。实际上真正的功能没用到，我们还是根据图来解释这个过程：
+
 ![range_rank](img/range_rank.jpg)  
+
 上述的过程是根据一段range[a,b]，即[a,b]为黑名单，或者禁止停车区域，那么最后生成的range_map，其中的键为node即对应的lane，值为黑名单的range[a,b]，和上面的例子不一样的地方在于，这里起点和终点不是一个点，而是一个range，这样生成的valid_range则为[0,a],[b,length1]，生成的2个子节点就是可以通过的区域，而这2个节点不是连续的，不能直接通过。也就是说routing_request是这种情况的特例，即黑名单range的起点和终点都是一个点，生成的2个子节点也就是连续的。apollo的代码做了冗余设计，但是实际没有用到，我们在总结下2种添加黑名单的设计:  
+
 1. **GenerateBlackMapFromRequest** - 通过request请求传入黑名单lane和road，每次直接屏蔽一整条road或者lane。
-2. **AddBlackMapFromTerminal** - 虽然range_manager支持传入range，但是这种场景只是针对routing_request传入的点对lane做切割，方便计算，每次切割的区间的起点和终点重合，是一个特殊场景，后续应该有用到比如在一条lane里，有某一段不能行驶的功能。  
-接下来看具体的实现：  
+
+2. **AddBlackMapFromTerminal** - 虽然range_manager支持传入range，但是这种场景只是针对routing_request传入的点对lane做切割，方便计算，每次切割的区间的起点和终点重合，是一个特殊场景，后续应该有用到比如在一条lane里，有某一段不能行驶的功能。
+
+  接下来看具体的实现：  
 ```c++
 void BlackListRangeGenerator::AddBlackMapFromTerminal(
     const TopoNode* src_node, const TopoNode* dest_node, double start_s,
@@ -720,12 +589,13 @@ void GetSortedValidRange(const TopoNode* topo_node,
 }
 ```
 
-<a name="generate_subgraph" />
+## 生成子图
+然后我们再回过头去看下如何生成子图，生成子图的流程如下：
 
-#### 生成子图
-然后我们再回过头去看下如何生成子图，生成子图的流程如下：  
 ![black_map](img/black_map.jpg)  
-生成子图主要在构造函数中：  
+
+生成子图主要在构造函数中：
+
 ```c++
 SubTopoGraph::SubTopoGraph(
     const std::unordered_map<const TopoNode*, std::vector<NodeSRange>>&
@@ -750,7 +620,7 @@ SubTopoGraph::SubTopoGraph(
 ```
 上述过程比较简单，浏览代码即可以理解。我们主要看下如何使用subgraph。  
 
-由于Graph节点中已经有边的信息，因此原先的Graph中的边的信息实际上已经保存在节点中了，最后Astar实际上只用到了子图的信息，因为节点有自己边的信息。subgraph的核心是通过边找到子边，如果节点不存在子节点，那么返回原先的边，通过该函数可以同时找到边和子边，这样节点和子节点都可以找到了。我们下面重点分析下"GetSubInEdgesIntoSubGraph"，另外一个类似:  
+由于Graph节点中已经有边的信息，因此原先的Graph中的边的信息实际上已经保存在节点中了，最后Astar实际上只用到了子图的信息，因为节点有自己边的信息。subgraph的核心是通过边找到子边，如果节点不存在子节点，那么返回原先的边，通过该函数可以同时找到边和子边，这样节点和子节点都可以找到了。我们下面重点分析下"GetSubInEdgesIntoSubGraph"，另外一个类似：  
 ```c++
 void SubTopoGraph::GetSubInEdgesIntoSubGraph(
     const TopoEdge* edge,
@@ -778,9 +648,7 @@ void SubTopoGraph::GetSubInEdgesIntoSubGraph(
 
 关于子图的分析就结束了，子图主要是针对一条lane切分为几个子节点的情况，根据切分好的子节点从新生成一张图，比原先根据routing_map建立的图有更细的粒度。  
 
-<a name="astar" />
-
-#### Astar算法
+## Astar算法
 最后根据生成好的子图，通过Astar算法来查找最佳路径，实现在"routing/strategy"目录。可以看到strategy中实现了一个"Strategy"的基类，也就是说后面可以扩展其他的查找策略。  
 ```c++
 class Strategy {
@@ -796,19 +664,19 @@ class Strategy {
 ```
 f(n)=g(n)+h(n)
 ```
-这个公式遵循以下特性：  
+这个公式遵循以下特性：
+
 如果g(n)为0，即只计算任意顶点n到目标的评估函数h(n)，而不计算起点到顶点n的距离，则算法转化为使用贪心策略的最良优先搜索，速度最快，但可能得不出最优解；
 如果h(n)不大于顶点n到目标顶点的实际距离，则一定可以求出最优解，而且h(n)越小，需要计算的节点越多，算法效率越低，常见的评估函数有——欧几里得距离、曼哈顿距离、切比雪夫距离；
 如果h(n)为0，即只需求出起点到任意顶点n的最短路径g(n)，而不计算任何评估函数h(n)，则转化为单源最短路径问题，即Dijkstra算法，此时需要计算最多的顶点；
 
 TODO: 具体算法实现可以参考维基百科的伪代码，由于网上已经有大量的astar算法的介绍，这里暂时先跳过，后面再增加这一部分的介绍。  
 
-跳过Astar算法找到最优路径之后，发送routing_response，然后planning模块根据生成好的路径，控制车辆行驶。这里routing模块的使命就完成了，除非planning模块需要重新规划，则会重新发送routing_request再进行规划。  
+跳过Astar算法找到最优路径之后，发送routing_response，然后planning模块根据生成好的路径，控制车辆行驶。这里routing模块的使命就完成了，除非planning模块需要重新规划，则会重新发送routing_request再进行规划。
 
 
-<a name="tools" />
 
-## 调试工具
+# 调试工具
 在routing/tools目录实现了如下3个功能：
 ```c++
 routing_cast.cc // 定时发送routing response响应
@@ -816,27 +684,29 @@ routing_dump.cc // 保存routing请求
 routing_tester.cc // 定时发送routing request请求
 ```
 
-<a name="question" />
 
-## 问题
-如果是曲线转弯，并且需要变道的情况，是否可以规划？比如在十字路口，左转中途有车挡住，这时候需要变道，就是edge左转，再加上node是曲线的情况，是否能够实现，这应该是planning应该考虑的情况？  
+
+# 问题
+如果是曲线转弯，并且需要变道的情况，是否可以规划？比如在十字路口，左转中途有车挡住，这时候需要变道，就是edge左转，再加上node是曲线的情况，是否能够实现，这应该是planning应该考虑的情况？
+
 答： 可以实现，lane有直道和弯道的区别，edge有左转和右转的区别，在转弯过程中如果需要左转，继续左转就可以了，这里只描述了道路的信息，不关注是直道还是弯道。  
 
-<a name="osm_find" />
 
-## OSM数据查找
+
+# OSM数据查找
 通过下面的链接，替换掉网址最后的id，就可以查找到对应的way，node和relation。
 * If it's a polygon, then it's a closed way in the OSM database. You can find ways by id as simple as this: http://www.openstreetmap.org/way/305293190
 * If a specific node (the building blocks of ways) is giving a problem, the link would be : http://www.openstreetmap.org/node/305293190
 * If it is a multipolygon (for example a building with a hole in it), the link would be :   http://www.openstreetmap.org/relation/305293190
   
+
 地图可以在下面的链接选择导出，导出格式为OSM格式:  
 * You can download the osm from: https://www.openstreetmap.org/export#map=15/22.5163/113.9380
 
 
-<a name="reference" />
 
-## Reference
+
+# Reference
 [OSM地图介绍](https://blog.csdn.net/scy411082514/article/details/7484497)
 [OSM Routing](https://wiki.openstreetmap.org/wiki/Routing)  
 [OSM Pathfinding](https://github.com/daohu527/osm-pathfinding)
