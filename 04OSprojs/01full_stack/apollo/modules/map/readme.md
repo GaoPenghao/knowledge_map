@@ -581,11 +581,13 @@ message SpeedControls {
 
 
 
-## opendriver地图解析
+# opendriver地图解析
 
 上面只是简单的介绍了下地图的数据格式，具体的应用场景，还需要结合planning模块进一步学习。  
+
 我们再回过头来看adapter模块，其中xml_parser就是针对道路的不同元素部分做的解析。
-```
+
+```bash
 ├── adapter
 │   ├── BUILD
 │   ├── coordinate_convert_tool.cc    // 坐标转换工具
@@ -612,16 +614,93 @@ message SpeedControls {
 │       ├── util_xml_parser.cc
 │       └── util_xml_parser.h
 ```
-<a name="api" />
-
-## 高精度地图API
-最后在看下hdmap_impl.cc，主要实现了一系列的api来查找道路中的元素。由于实现的接口太多，后面有时间了看是否能够整理下api文档。  
-关于pnc_map和relative_map还没有介绍，关于一些道路元素的使用场景没有介绍。  
 
 
-<a name="tools" />
+# 高精度地图API
+在文件 hdmap_impl.cc 中定义了高精地图 API，包括加载高精地图、查找道路中的元素等。这里选取其中几个函数进行说明。
 
-## tools
+## GetLanes
+
+```c++
+/**
+   * @brief 获取以point为圆心，distance为半径的圆范围内的所有lane
+   * @param point the central point of the range
+   * @param distance the search radius
+   * @param lanes store all lanes in target range
+   * @return 0:success, otherwise failed
+   */
+  int GetLanes(const apollo::common::PointENU& point, double distance,
+               std::vector<LaneInfoConstPtr>* lanes) const;
+```
+
+## GetNearestLane
+
+```c++
+/**
+   * @brief 获取距离点point最近的lane（用车道中心线表征lane，从几何上看就是，获取距离point点最近的一条曲线，并获取point在该曲线坐标下的s、l坐标）
+   * @param point the target point
+   * @param nearest_lane the nearest lane that match search conditions
+   * @param nearest_s the offset from lane start point along lane center line
+   * @param nearest_l the lateral offset from lane center line
+   * @return 0:success, otherwise, failed.
+   */
+  int GetNearestLane(const apollo::common::PointENU& point,
+                     LaneInfoConstPtr* nearest_lane, double* nearest_s,
+                     double* nearest_l) const;
+```
+
+## GetLanesWithHeading
+
+```c++
+/**
+   * @brief 首先获取以point为圆心，distance为半径的圆范围内的所有lane，其次对于每条lane，找到point在其道路坐标下的匹配点，进一步可以得到匹配点的道路heading，最终获取该heading在给定范围内的所有lane
+   * @param point the target position
+   * @param distance the search radius
+   * @param central_heading the base heading
+   * @param max_heading_difference the heading range
+   * @param nearest_lane all lanes that match search conditions
+   * @return 0:success, otherwise, failed.
+   */
+  int GetLanesWithHeading(const apollo::common::PointENU& point,
+                          const double distance, const double central_heading,
+                          const double max_heading_difference,
+                          std::vector<LaneInfoConstPtr>* lanes) const;
+```
+
+## GetNearestLaneWithHeading
+
+```c++
+/**
+   * @brief 首先 GetLanesWithHeading，然后从中选择最近的一条 lane，并获取point在该车道坐标系下的（s, l）坐标
+   * @param point the target position
+   * @param distance the search radius
+   * @param central_heading the base heading
+   * @param max_heading_difference the heading range
+   * @param nearest_lane the nearest lane that match search conditions
+   * @param nearest_s the offset from lane start point along lane center line
+   * @param nearest_l the lateral offset from lane center line
+   * @return 0:success, otherwise, failed.
+   */
+  int GetNearestLaneWithHeading(const apollo::common::PointENU& point,
+                                const double distance,
+                                const double central_heading,
+                                const double max_heading_difference,
+                                LaneInfoConstPtr* nearest_lane,
+                                double* nearest_s, double* nearest_l) const;
+```
+
+
+
+# PncMap
+
+todo
+
+# RelativeMap
+
+todo
+
+
+# tools
 tools的目录结构如下，主要是一些制作和转换地图的工具。  
 ```
 .
@@ -639,47 +718,50 @@ tools的目录结构如下，主要是一些制作和转换地图的工具。
 下面简单介绍下各个工具的实现以及作用。  
 
 
-#### sim_map_generator
-通过base_map生成sim_map，其中sim_map去掉了base_map中的
-```
-left_sample
-right_sample
-left_road_sample
-right_road_sample
-```
-主要的作用为获取当前道路的宽度。  
+## sim_map_generator
+通过base_map生成sim_map，==关于 base_map、routing_map 和 sim_map 之间的区别，请参考 map/data/README.md==，其中 base_map 是高精地图，sim_map 是轻量化的 base_map，用于在 dreamview 中进行可视化。
 
-另外对`central_curve`,`left_boundary`和`right_boundary`进行了降采样，减少了点数。  
+该工具的使用方法如下，在 modules/map/data 路径下新建文件夹，最好以地图名称命名，然后将 base_map 放在该文件夹下，然后在 docker 终端中运行下面两行命令，便可以在该文件夹下生成 sim_map
 
+ ```bash
+ dir_name=modules/map/data/demo  # example map directory
+ bazel-bin/modules/map/tools/sim_map_generator --map_dir=${dir_name} --output_dir=${dir_name}
+ ```
 
-#### refresh_default_end_way_point
+从以上命令中可以观察出规律，可执行文件后面紧跟的参数将会被`google::ParseCommandLineFlags`解析，比如`map_dir`其实是预定义在gflag中的变量，在可执行文件的运行过程中，肯定是用到了`map_dir`这个变量，但是又不能使用默认值，所以在命令行中重新赋值。
+
+由此可以初步总结出以下两个结论：
+
+1. 自定义工具脚本时，要熟练使用gflag定义参数
+2. 在使用别人定义的工具脚本时，要熟练的确定运行参数
+
+## refresh_default_end_way_point
+
 更新routing POI中的默认点的位置信息，这里的默认点就是比较典型的地标，方便选择routing位置。  
 
-#### quaternion_euler
+## quaternion_euler
 4维旋转转3维
 
-#### proto_map_generator
+## proto_map_generator
 转换opendrive格式的地图为apollo proto的地图
 
-#### map_xysl
+## map_xysl
 功能很多，用来查找lane，以及lane上的点转SL  
 
-#### map_tool
+## map_tool
 地图整体加上位置偏移。  
 
-#### bin_map_generator
+## bin_map_generator
 txt地图转换为bin地图。  
 
 
-<a name="how"/>
 
-## 如何制作高精度地图
+
+# 如何制作高精度地图
 前面介绍了为什么需要高精度地图，那么我们如何制作一张高精度地图呢？  
 制作一张高精度地图可以大概分为3个过程：采集、加工、转换。
 
-<a name="collect"/>
-
-#### 采集
+## 采集
 如何采集地图？  
 
 我们需要需要一些传感器来获取数据，下面是需要的传感器列表：
@@ -703,10 +785,7 @@ txt地图转换为bin地图。
 > 上面的采集方案依赖很多，首先需要一系列的硬件，其次是需要apollo，并且熟悉apollo的启动流程，最后还需要传感器校准的知识。实际上采集的过程中我们不需要自动驾驶。可以开发一个轻量级的采集方案，硬件全部集中到一个盒子中，软件只需要提供录制bag包的能力就可以了，这点ros都可以做到，最后校准由于硬件都是一体化的盒子，只需要校准一个传感器就可以把其中所有传感器的坐标系确定。相对于上面的方案来说更加轻量，可能只需要邮寄一套设备就可以开始录制地图了。  
 here的地图是分层的，比如路面是很少更新的，而路灯，车道标识，或者红绿灯可能会更换，所以路面信息可能需要激光雷达去采集一次，而路灯，车道标识，红绿灯等可以通过摄像头的方案来更新，因为高精度地图需要实时更新，上面的方案可能更加适合一些地图更新的场景。
 
-
-<a name="process"/>
-
-#### 加工
+## 加工
 如何加工上述地图？  
 
 首先需要生成一张原始的地图，这里我们采用点云生成原始的地图，因为点云的距离位置信息比较准确，因为点云数据是0.1s采集一帧，下面我们可以做一个计算。如果车速是100km/h，对应27.8m/s。即0.1s车行驶的距离是2.78m，而激光雷达的扫描距离大概是150m，所以前后2帧大部分地方是重合的。因为数据是一帧一帧的，我们需要把上面的说的每一帧进行合并，生成一张完整的地图，有点类似全景照片拼接，这样我们就可以得到一张原始的采集路段的地图。这里用到了点云的配准技术，有2种算法ICP和NDT，基于上面的算法，可以把点云的姿态进行变换并且融合。具体的介绍可以[参考](https://blog.csdn.net/xs1997/article/details/76795041)。
@@ -723,17 +802,12 @@ here的地图是分层的，比如路面是很少更新的，而路灯，车道�
 ```
 这样就生成了一张高精度地图，当然加工过程中首要的目标是提高效率和质量，尽量的采用算法自动化处理会很大的提高效率，这可能是后面地图厂家的核心竞争力。因为地图需要实时更新，谁的效率更高，谁的图就越新，用的人越多，之后的数据也越完善。  
 
-
-<a name="transform"/>
-
-#### 转换
+## 转换
 转换主要是得到一个通用的自动驾驶系统可以使用的高精度地图。  
 
 上面的高精地图格式可能还是原始的数据格式，需要转换为apollo中高精度地图的格式，apollo中高精度地图采用了opendrive的格式，并且做了改进，总之这是一个通用的标准，这个很重要，否则每个厂家的数据如果不兼容，会导致很大的问题，你需要开发一系列的转换工具，去处理不同地图的差异，并且不同的自动驾驶系统和不同的地图厂家采用的方式不一样，会带来很多兼容性问题。  
 
-<a name="reference" />
-
-## Reference
+# Reference
 [convert opendrive to base_map.xml](https://github.com/ApolloAuto/apollo/issues/603)
 [点云拼接注册](https://blog.csdn.net/xs1997/article/details/76795041)  
 [百度技术讲堂](http://bit.baidu.com/Course/detail/id/282.html)  
