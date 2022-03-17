@@ -1,45 +1,9 @@
-# Dig into Apollo - Planning ![GitHub](https://img.shields.io/github/license/daohu527/Dig-into-Apollo.svg?style=popout)
-
-> 吾尝终日而思矣 不如须臾之所学也
-
-
-## Table of Contents
-- [Planning模块简介](#introduction)
-  - [Planning输入输出](#planning_io)
-  - [Planning整个流程](#planning_flow)
-- [Planning模块入口](#planning_entry)
-  - [模块注册](#planning_register)
-  - [模块初始化](#planning_init)
-  - [模块运行](#planning_proc)
-- [Reference line参考线](reference_line)
-  - [介绍](reference_line#introduction)
-  - [参考线](reference_line#rf_line)
-  - [平滑器](reference_line#rf_smoother)
-  - [参考线提供者](reference_line#rf_provider)  
-- [OnLanePlanning](#onLanePlanning)
-  - [初始化](#onLanePlanning_init)
-  - [事件触发](#onLanePlanning_trigger)
-- [Planner](#planner)
-  - [Planner注册场景](#planner_register)
-  - [运行场景](#planner_plan)
-- [Scenario](#scenario)
-  - [场景转换](#scenario_update)
-  - [场景运行](#scenario_process)
-- [Task](#task)
-  - [DP & QP](#dp_qp)
-- [Reference](#reference)
-  
-
-<a name="introduction" />
-
-## Planning模块简介
+# Planning模块简介
 规划(planning)模块的作用是根据感知预测的结果，当前的车辆信息和路况规划出一条车辆能够行驶的轨迹，这个轨迹会交给控制(control)模块，控制模块通过油门，刹车和方向盘使得车辆按照规划的轨迹运行。
 规划模块的轨迹是短期轨迹，即车辆短期内行驶的轨迹，长期的轨迹是routing模块规划出的导航轨迹，即起点到目的地的轨迹，规划模块会先生成导航轨迹，然后根据导航轨迹和路况的情况，沿着短期轨迹行驶，直到目的地。这点也很好理解，我们开车之前先打开导航，然后根据导航行驶，如果前面有车就会减速或者变道，超车，避让行人等，这就是短期轨迹，结合上述的方式直到行驶到目的地。  
 
-<a name="planning_io" />
-
-#### Planning输入输出
-我们先看下Apollo的数据流向：$\textcolor{red}{下图保留，待更新}$​​
+## Planning输入输出
+我们先看下Apollo的数据流向：$\textcolor{red}{下图保留，待更新}$，在7.0版本中，planning模块会给prediction模块反馈信息，称为“交互式预测”。​​
 ![Apollo_dataflow](img/dataflow.png)
 
 可以看到规划(planning)模块的上游是Localization, Prediction, Routing模块，而下游是Control模块。Routing模块先规划出一条导航线路，然后Planning模块根据这条线路做局部优化，如果Planning模块发现短期规划的线路行不通（比如前面修路，或者错过了路口），会触发Routing模块重新规划线路，因此这两个模块的数据流是双向的。
@@ -56,7 +20,7 @@ Planning模块的输入在"planning_component.h"中，接口如下:
 1. 预测的障碍物信息(prediction_obstacles)
 2. 车辆底盘(chassis)信息(车辆的速度，加速度，航向角等信息)
 3. 车辆当前位置(localization_estimate)
-> 实际上还有高精度地图信息，不在参数中传入，而是在函数中直接读取的。  
+> 实际上还有高精度地图信息，不在参数中传入，高精地图可以理解为全局静态信息，在任何模块需要的时候随时访问，不需要传参。  
 
 Planning模块的输出结果在"PlanningComponent::Proc()"中，为规划好的线路，发布到Control模块订阅的Topic中。
 输出结果为：规划好的路径。
@@ -67,9 +31,7 @@ Planning模块的输出结果在"PlanningComponent::Proc()"中，为规划好的
 planning_writer_->Write(adc_trajectory_pb);
 ```
 
-<a name="planning_flow" />
-
-#### Planning整个流程
+## Planning整个流程
 下图是整个Planning模块的执行过程：
 <img src="img/planning_flow.png" alt="planning_flow" style="zoom:150%;" />  
 
@@ -82,13 +44,9 @@ planning_writer_->Write(adc_trajectory_pb);
 
 接下来我们逐步分析整个planning模块的代码结构。
 
-<a name="planning_entry" />
+# Planning模块入口
 
-## Planning模块入口
-
-<a name="planning_register" />
-
-#### 模块注册
+## 模块注册
 Planning模块的入口为"planning_component.h"和"planning_component.cc"两个文件，实现的功能如下：
 ```c++
 // 订阅和发布消息
@@ -109,9 +67,7 @@ std::shared_ptr<cyber::Writer<PlanningLearningData>>
 CYBER_REGISTER_COMPONENT(PlanningComponent)
 ```
 
-<a name="planning_init" />
-
-#### 模块初始化
+## 模块初始化
 除了注册模块，订阅和发布消息之外，planning模块实现了2个主要函数"init"和"proc"。
 Init中实现了模块的初始化：
 
@@ -138,7 +94,7 @@ DEFINE_bool(use_navigation_mode, false,
 
 模块之间的关系如下：
 
-<img src="D:\project\Git\dig-into-apollo\modules\planning\img\planning_base.png" alt="planning_base" style="zoom: 33%;" />
+![](img/planning_base.png)
 
 可以看到"NaviPlanning"和"OnLanePlanning"都继承自同一个基类，并且在PlanningComponent中通过配置选择一个具体的实现进行注册，通过父类指针（planning_base_）指向子类对象实现。  
 
@@ -197,7 +153,7 @@ routing_reader_ = node_->CreateReader<RoutingResponse>(
       (config_.topic_config().planning_learning_data_topic());
 ```
 至此，Planning模块的初始化就完成了。
-其中 ==planning_offline_learning== 和 ==learning_mode== 的配置分别如下所示：
+其中 ==planning_offline_learning== 和 ==learning_mode== 的默认配置分别如下所示：
 
 ```c++
 // 'modules/planning/common/planning_gflags.cc'
@@ -212,9 +168,7 @@ DEFINE_bool(planning_offline_learning, false,
 learning_mode: NO_LEARNING
 ```
 
-<a name="planning_proc" />
-
-#### 模块运行
+## 模块运行
 Proc的主要是检查数据，并且执行注册好的Planning，生成路线并且发布。
 ```c++
 bool PlanningComponent::Proc(...) {
@@ -278,11 +232,9 @@ bool PlanningComponent::Proc(...) {
 }
 ```
 整个"PlanningComponent"的分析就完成了，可以看到"PlanningComponent"是Planning模块的入口，在Apollo3.5引入了Cyber之后，实现了Planning模块在Cyber中的注册，订阅和发布topic消息。同时实现了2种不同的Planning，根据配置选择其中的一种并且运行。
-由于默认的Planning是开放道路的OnLanePlanning，我们接下来主要分析这个Planning。
+由于默认的Planning是OnLanePlanning，其同时包含了在规则道路中行驶和开放区域（停车场等）行驶两类主要场景，我们接下来主要分析这个Planning。
 
-<a name="onLanePlanning" />
-
-## OnLanePlanning
+# OnLanePlanning
 每次Planning会根据以下2个信息作为输入来执行：
 1. Planning上下文信息
 2. Frame结构体(车辆信息，位置信息等所有规划需要用到的信息，在 /planning/common/frame.h 中
@@ -323,9 +275,7 @@ std::vector<routing::LaneWaypoint> future_route_waypoints_;
 common::monitor::MonitorLogBuffer monitor_logger_buffer_;  // ？
 ```
 
-<a name="onLanePlanning_init" />
-
-#### 初始化
+## 初始化
 OnLanePlanning的初始化逻辑在Init中，主要实现分配具体的Planner，启动参考线提供器(reference_line_provider_)，代码分析如下：
 ```c++
 Status OnLanePlanning::Init(const PlanningConfig& config) {
@@ -371,9 +321,7 @@ std::unique_ptr<Planner> OnLanePlannerDispatcher::DispatchPlanner(
 }
 ```
 
-<a name="onLanePlanning_trigger" />
-
-#### 事件触发
+## 事件触发
 
 OnLanePlanning的主要逻辑在"RunOnce()"中，在Apollo 3.5之前是定时器触发，3.5改为事件触发，即收到对应的消息之后，就触发执行，这样做的好处是增加了实时性 [参考](https://github.com/ApolloAuto/apollo/issues/6572)。  
 ```c++
@@ -515,10 +463,7 @@ Status OnLanePlanning::Plan(
 
 上述就是"OnLanePlanning"的执行过程，先是Planner分发器根据配置，选择具体的planner，然后初始化Frame，(PUBLIC_ROAD)planner根据输入帧执行"Plan"方法。
 
-
-<a name="planner" />
-
-## Planner
+# Planner
 我们先看下Planner目录结构，一共实现了4种Planner：
 ```
 .
@@ -537,15 +482,13 @@ Status OnLanePlanning::Plan(
 ├── public_road       // public road planner
 └── rtk               // rtk planner
 ```
-可以看到Planner目录分别实现了Planner发布器和具体的Planner，关于发布器我们后面会根据流程图来介绍，这里先介绍一下5种不同的Planner。
+可以看到Planner目录分别实现了Planner发布器和具体的Planner，关于发布器我们后面会根据流程图来介绍，这里先介绍一下4种不同的Planner。
 * **rtk**          - 根据录制的轨迹来规划行车路线
 * **public_road**  - 开放道路的轨迹规划器
-* **lattice**      - 基于网格算法的轨迹规划器
+* **lattice**      - 基于状态晶格采样的轨迹规划器
 * **navi**         - 基于实时相对地图的规划器
 
-<a name="planner_register" />
-
-#### Planner注册场景
+## Planner注册场景
 下面我们整理一下planner模块的流程：
 <img src="img/planning_component.png" alt="planner流程" style="zoom: 33%;" />
 
