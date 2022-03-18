@@ -539,9 +539,7 @@ standard_planning_config {
   }
 ```
 
-<a name="planner_plan" />
-
-#### 运行场景
+## 运行场景
 接着看"Plan"中的实现：
 ```c++
 Status PublicRoadPlanner::Plan(const TrajectoryPoint& planning_start_point,
@@ -572,38 +570,32 @@ Status PublicRoadPlanner::Plan(const TrajectoryPoint& planning_start_point,
 可以看到"Planner"模块把具体的规划转化成一系列的场景，每次执行规划之前先判断更新当前的场景，然后针对具体的场景去执行。
 下面我们先看下"Scenario"模块，然后把这2个模块串起来讲解。  
 
+# Scenario
+## 场景定义
 
-<a name="scenario" />
+目前 apollo 一共支持了 14 种场景。
 
-## Scenario
-我们同样先看下"Scenario"的目录结构：
-```
-.
-├── bare_intersection\unprotected
-├── BUILD
-├── common
-├── emergency
-├── lane_follow            // 车道线保持
-├── learning_model
-├── narrow_street_u_turn   // 狭窄掉头
-├── park
-├── park_and_go
-├── scenario.cc
-├── scenario.h
-├── scenario_manager.cc
-├── scenario_manager.h
-├── stage.cc
-├── stage.h
-├── stop_sign             // 停止
-├── traffic_light         // 红绿灯
-├── util
-└── yield_sign
-```
-其中需要知道场景如何转换，以及每种场景如何执行。几种场景的介绍可以先看下Apollo的官方文档[planning](https://github.com/ApolloAuto/apollo/blob/master/modules/planning/README.md)，主要的场景是lane_follow，side_pass和stop_sign。
+1. lane follow: 默认场景，包括本车道保持、变道、基本转弯
+2. bare intersection unprotected: 无保护裸露交叉路口
+3. stop sign unprotected: 无保护停止标志
+4. yield sign: 让行标志
+5. traffic light protected: 有保护交通灯，即有明确的交通指示灯（左转、右转）
+6. traffic light unprotected left turn: 无保护交通灯左转，即没有明确的左转指示灯，比如只有一个表征“是否可通行的”圆灯，这种场景需要避让对向的直行来车
+7. traffic light unprotected right turn: 无保护交通灯右转，需要避让交通流（同上）
+8. narrow street u turn: 在狭窄的街道上掉头
+9. dead end turnaround: 在前方死路情况下掉头
+10. pull over: 靠边停车（属于正常停车的场景之一）
+11. valet parking: 停车位泊车（属于正常停车的场景之二）
+12. park and go: 从停车状态启动，通常需要从停车区切换到行驶车道
+13. emergency pull over: 紧急情况下靠边停车
+14. emergency stop: 紧急情况下就近停车
 
-<a name="scenario_update" />
+其中一些关键词的概念如下：
 
-#### 场景转换
+- bare，通常路口在高精地图上的表征方法为“交通标志+路口”，两者都是以 overlap 存在的，即规则的路口应该存在一对 overlap，比如“信号灯 + junction”、“停车标志 + junction”、“让行标志 + junction”，通常当前方有两个连续的 overlap 时，且分别为交通标志和路口（无所谓哪个在前），当且仅当二者的起始 s 绝对值差在 10m 以内时，才认定为一对合格的 overlap。但是，并不是所有的路口都是这样有规则的，有些路口就是没有交通标志，这类路口就被划分为 bare 的类型。
+- protected，这里的保护和无保护主要的评判标准为，是否有交通指示灯（箭头指示灯），区别于交通信号灯（传统圆灯）。一般只有在箭头指示灯的情况下，代表着在左转和右转时不需要考虑让行对向的直行车辆。所以没有信号灯以及信号灯是圆灯的情况均可称为无保护场景。
+
+## 场景转换
 场景转换的实现在"scenario_manager.cc"中，其中实现了场景注册，创建场景和更新场景的功能。  
 ```c++
 bool ScenarioManager::Init(const PlanningConfig& planning_config) {
@@ -638,9 +630,7 @@ void ScenarioManager::ScenarioDispatch(const Frame& frame) {
 可以看到，每次切换场景必须是从默认场景(LANE_FOLLOW)开始，即每次场景切换之后都会回到默认场景。
 > ScenarioDispatch目前的代码还没完全完成(有些分支TODO)，而且个人感觉这个实现不够简介和优秀，逻辑看起来有些混乱，不知道是否可以用状态机改进？
 
-<a name="scenario_process" />
-
-#### 场景运行
+## 场景运行
 场景的执行在"scenario.cc"和对应的场景目录中，实际上每个场景又分为一个或者多个阶段(stage)，每个阶段又由不同的任务(task)组成。执行一个场景，就是顺序执行不同阶段的不同任务。
 ![Planner结构](img/Planner.png)  Scenario对应的stage和task在"planning/conf/scenario"中。
 
@@ -737,10 +727,7 @@ Status LaneFollowStage::PlanOnReferenceLine(
 
 接下来我们看下Task是如何执行的。  
 
-
-<a name="task" />
-
-## Task
+# Task
 我们先看Task的目录结构：  
 ```
 .
@@ -756,14 +743,12 @@ Status LaneFollowStage::PlanOnReferenceLine(
 ```
 可以看到每个Task都可以对应到一个决策器或者优化器（平滑器不作为Task，单独作为一个类）。  
 
-每个Task都实现了"Execute"方法，而每个决策器和优化器都继承至Task类。可以参考下图：  
+每个Task都实现了"Execute"方法，而每个决策器和优化器都继承至Task类。可以参考下图： 
 ![Task类](img/task.png)  
 
 > Task类的生成用到了设计模式的工厂模式，通过"TaskFactory"类生产不同的Task类。
 
-<a name="dp_qp" />
-
-#### DP & QP
+## DP & QP
 Task中的决策器和优化器采用的方法有DP和QP:
 * **DP** 动态规划
 * **QP** 二次规划
@@ -772,10 +757,7 @@ QP方法的路径优化和速度优化可以参考apollo文档:
 [QP-Spline-Path Optimizer](https://github.com/ApolloAuto/apollo/blob/master/docs/specs/qp_spline_path_optimizer.md)  
 [QP-Spline-ST-Speed Optimizer](https://github.com/ApolloAuto/apollo/blob/master/docs/specs/qp_spline_st_speed_optimizer.md)  
 
-
-<a name="reference" />
-
-## Reference
+# Reference
 [解析百度Apollo之决策规划模块](https://paul.pub/apollo-planning/#id-planning%E4%B8%8Eplanner)  
 [Open Space Planner Algorithm](https://github.com/ApolloAuto/apollo/blob/master/docs/specs/Open_Space_Planner.md)  
 
