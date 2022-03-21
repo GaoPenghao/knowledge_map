@@ -582,7 +582,7 @@ Status PublicRoadPlanner::Plan(const TrajectoryPoint& planning_start_point,
 5. traffic light protected: 有保护交通灯，即有明确的交通指示灯（左转、右转）
 6. traffic light unprotected left turn: 无保护交通灯左转，即没有明确的左转指示灯，比如只有一个表征“是否可通行的”圆灯，这种场景需要避让对向的直行来车
 7. traffic light unprotected right turn: 无保护交通灯右转，需要避让交通流（同上）
-8. narrow street u turn: 在狭窄的街道上掉头
+8. narrow street u turn: 在狭窄的街道上掉头（该场景貌似在7.0中已经被弃用）
 9. dead end turnaround: 在前方死路情况下掉头
 10. pull over: 靠边停车（属于正常停车的场景之一）
 11. valet parking: 停车位泊车（属于正常停车的场景之二）
@@ -612,7 +612,7 @@ bool ScenarioManager::Init(const PlanningConfig& planning_config) {
 void ScenarioManager::Update(const common::TrajectoryPoint& ego_point,
                              const Frame& frame) {
   CHECK(!frame.reference_line_info().empty());
-  // 保留当前帧
+  // 观察前方道路状况，主要是获取高精地图中overlap的信息，这将影响场景的决策
   Observe(frame);
   // 场景分发
   ScenarioDispatch(frame);
